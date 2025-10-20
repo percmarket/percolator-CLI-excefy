@@ -1,43 +1,31 @@
-/// Router instruction handlers
+/// Router instruction handlers (v0 minimal)
 
-pub mod deposit;
-pub mod withdraw;
 pub mod initialize;
 pub mod initialize_portfolio;
-pub mod initialize_escrow;
-pub mod multi_reserve;
-pub mod multi_commit;
-pub mod liquidate;
+pub mod deposit;
+pub mod withdraw;
+pub mod execute_cross_slab;
 
-pub use deposit::*;
-pub use withdraw::*;
 pub use initialize::*;
 pub use initialize_portfolio::*;
-pub use initialize_escrow::*;
-pub use multi_reserve::*;
-pub use multi_commit::*;
-pub use liquidate::*;
+pub use deposit::*;
+pub use withdraw::*;
+pub use execute_cross_slab::*;
 
-/// Instruction discriminator
+/// Instruction discriminator (v0 minimal)
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouterInstruction {
-    /// Initialize router
+    /// Initialize router registry
     Initialize = 0,
-    /// Deposit collateral
-    Deposit = 1,
-    /// Withdraw collateral
-    Withdraw = 2,
-    /// Multi-slab reserve orchestration
-    MultiReserve = 3,
-    /// Multi-slab commit orchestration
-    MultiCommit = 4,
-    /// Liquidation coordinator
-    Liquidate = 5,
-    /// Initialize portfolio
-    InitializePortfolio = 6,
-    /// Initialize escrow
-    InitializeEscrow = 7,
+    /// Initialize user portfolio
+    InitializePortfolio = 1,
+    /// Deposit collateral to vault
+    Deposit = 2,
+    /// Withdraw collateral from vault
+    Withdraw = 3,
+    /// Execute cross-slab order (v0 main instruction)
+    ExecuteCrossSlab = 4,
 }
 
 // Note: Instruction dispatching is handled in entrypoint.rs
