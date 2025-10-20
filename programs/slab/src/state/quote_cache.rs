@@ -91,11 +91,11 @@ mod tests {
     fn test_quote_cache_update() {
         let mut cache = QuoteCache::new();
 
-        let bids = vec![
+        let bids = [
             QuoteLevel { px: 50_000_000_000, avail_qty: 1_000_000 },
             QuoteLevel { px: 49_999_000_000, avail_qty: 2_000_000 },
         ];
-        let asks = vec![
+        let asks = [
             QuoteLevel { px: 50_001_000_000, avail_qty: 1_500_000 },
         ];
 
