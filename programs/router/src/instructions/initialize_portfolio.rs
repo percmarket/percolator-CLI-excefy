@@ -51,3 +51,7 @@ pub fn process_initialize_portfolio(
     msg!("Portfolio initialized successfully");
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "portfolio_escrow_test.rs"]
+mod portfolio_escrow_test;

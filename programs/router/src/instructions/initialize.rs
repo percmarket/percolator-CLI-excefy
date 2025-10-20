@@ -52,3 +52,7 @@ pub fn process_initialize_registry(
     msg!("Registry initialized successfully");
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "initialize_test.rs"]
+mod initialize_test;

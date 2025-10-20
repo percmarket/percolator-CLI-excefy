@@ -115,3 +115,7 @@ pub fn process_initialize_slab(
     msg!("Slab initialized successfully");
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "initialize_test.rs"]
+mod initialize_test;
