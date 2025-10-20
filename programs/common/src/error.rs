@@ -12,6 +12,7 @@ pub enum PercolatorError {
     InsufficientFunds = 4,
     Overflow = 5,
     Underflow = 6,
+    Unauthorized = 7,
 
     // Router errors (100-199)
     InvalidSlab = 100,
