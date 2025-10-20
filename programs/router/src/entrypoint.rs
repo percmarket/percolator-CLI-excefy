@@ -8,7 +8,7 @@ use pinocchio::{
     ProgramResult,
 };
 
-use crate::instructions::{RouterInstruction, process_deposit, process_withdraw};
+use crate::instructions::{RouterInstruction, process_deposit, process_withdraw, process_initialize_registry};
 use crate::state::Vault;
 use percolator_common::{PercolatorError, validate_owner, validate_writable, borrow_account_data_mut, InstructionReader};
 
@@ -74,24 +74,39 @@ pub fn process_instruction(
 /// Process initialize instruction
 ///
 /// Expected accounts:
-/// 0. `[writable]` Registry account
-/// 1. `[signer]` Authority/payer
+/// 0. `[writable]` Registry account (PDA)
+/// 1. `[signer]` Governance authority
 ///
-/// Expected data layout: TBD
+/// Expected data layout (32 bytes):
+/// - governance: Pubkey (32 bytes)
 fn process_initialize_inner(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
-    if accounts.len() < 1 {
-        msg!("Error: Initialize instruction requires at least 1 account");
+    if accounts.len() < 2 {
+        msg!("Error: Initialize instruction requires at least 2 accounts");
         return Err(PercolatorError::InvalidInstruction.into());
     }
 
     let registry_account = &accounts[0];
+    let governance_account = &accounts[1];
+
+    // Validate accounts
     validate_owner(registry_account, program_id)?;
     validate_writable(registry_account)?;
 
-    // TODO: Initialize registry state
-    let _ = data;
+    // Parse instruction data - governance pubkey
+    let mut reader = InstructionReader::new(data);
+    let governance_bytes = reader.read_bytes::<32>()?;
+    let governance = Pubkey::from(governance_bytes);
 
-    msg!("Initialize instruction validated - implementation pending");
+    // Verify governance signer matches instruction data
+    if governance_account.key() != &governance {
+        msg!("Error: Governance account does not match instruction data");
+        return Err(PercolatorError::InvalidAccount.into());
+    }
+
+    // Call the initialization logic
+    process_initialize_registry(program_id, registry_account, &governance)?;
+
+    msg!("Router initialized successfully");
     Ok(())
 }
 

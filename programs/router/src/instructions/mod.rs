@@ -14,8 +14,6 @@ pub use multi_reserve::*;
 pub use multi_commit::*;
 pub use liquidate::*;
 
-use percolator_common::*;
-
 /// Instruction discriminator
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,29 +32,6 @@ pub enum RouterInstruction {
     Liquidate = 5,
 }
 
-/// Process router instruction
-///
-/// Routes instruction to appropriate handler based on discriminator.
-/// Note: This is a simplified dispatcher - actual BPF entrypoint will
-/// handle account deserialization and validation.
-pub fn process_instruction(
-    instruction: RouterInstruction,
-    _data: &[u8],
-) -> Result<(), PercolatorError> {
-    match instruction {
-        RouterInstruction::Initialize => process_initialize(),
-        RouterInstruction::Deposit => {
-            // TODO: Deserialize vault and amount from _data
-            // process_deposit(vault, amount)
-            Ok(())
-        }
-        RouterInstruction::Withdraw => {
-            // TODO: Deserialize vault and amount from _data
-            // process_withdraw(vault, amount)
-            Ok(())
-        }
-        RouterInstruction::MultiReserve => process_multi_reserve(),
-        RouterInstruction::MultiCommit => process_multi_commit(),
-        RouterInstruction::Liquidate => process_liquidate(),
-    }
-}
+// Note: Instruction dispatching is handled in entrypoint.rs
+// The functions in this module are called from the entrypoint after
+// account deserialization and validation.
