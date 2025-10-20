@@ -144,15 +144,78 @@ But **none of that is needed to prove the thesis**.
 
 ## Status
 
-- [x] Complex design implemented (research phase)
+### ✅ Completed (Commits: bf073d7, e98fb0d, 5db64f5, 99b071e)
+
+- [x] Complex design implemented (research phase - preserved in git history)
 - [x] v0 design documented
-- [ ] Slab simplification (remove pools, multi-account, etc.)
-- [ ] Router simplification (remove escrow, cap, etc.)
-- [ ] QuoteCache implementation
-- [ ] commit_fill instruction
-- [ ] Router CPI coordination
-- [ ] 7 critical tests
+- [x] Slab simplification complete
+  - [x] Removed pools, multi-account state, matching logic (~2,000 LOC removed)
+  - [x] Created minimal SlabState (~4KB: Header + QuoteCache + BookArea)
+  - [x] Added QuoteCache (best 4 bid/ask levels)
+  - [x] Added FillReceipt structure
+  - [x] Created commit_fill instruction stub
+- [x] Router simplification complete
+  - [x] Removed escrow.rs, cap.rs state files
+  - [x] Removed multi_reserve, multi_commit, liquidate instructions
+  - [x] Created execute_cross_slab instruction stub
+  - [x] Kept: Portfolio, Vault, Registry, Initialize, Deposit/Withdraw
+
+### 🚧 In Progress
+
+- [ ] Implement commit_fill logic (matching engine stub)
+- [ ] Implement execute_cross_slab logic (CPI coordination)
+  - [ ] Read QuoteCache bytes directly from slabs
+  - [ ] Validate seqno consistency
+  - [ ] CPI to commit_fill on each slab
+  - [ ] Aggregate FillReceipts
+  - [ ] Update Portfolio with net exposures
+  - [ ] Calculate IM on net exposure
+  - [ ] Check margin requirements
+- [ ] Update tests for v0 structure
+- [ ] Add 7 critical v0 tests
+
+### 📊 Code Reduction
+
+- **Before**: ~5,000 LOC (complex multi-pool design)
+- **After cleanup**: ~2,000 LOC
+- **Target for v0**: ~1,000 LOC total
+
+### 🎯 Next Session
+
+1. Implement simple price-time matching in commit_fill
+2. Implement QuoteCache updates on book changes
+3. Implement router CPI coordination in execute_cross_slab
+4. Add capital efficiency test (long A + short B = ~0 IM)
 
 ---
 
 **Core Insight**: The complex multi-pool design was solving problems we don't have in v0. This minimal design proves capital efficiency (the core value prop) in ~1000 LOC vs ~5000 LOC.
+
+## Current Architecture (v0)
+
+```
+Router Program (~800 LOC)
+├── State
+│   ├── Portfolio (net exposures across slabs)
+│   ├── Vault (collateral management)
+│   └── Registry (governance)
+├── Instructions
+│   ├── Initialize (setup registry)
+│   ├── InitializePortfolio (create user portfolio)
+│   ├── Deposit/Withdraw (vault operations)
+│   └── ExecuteCrossSlab (main v0 - splits, CPIs, aggregates)
+
+Slab Program (~600 LOC)
+├── State
+│   ├── SlabHeader (256B - metadata, seqno, offsets)
+│   ├── QuoteCache (256B - best 4 levels each side)
+│   └── BookArea (3KB - price-time queues stub)
+├── Instructions
+│   ├── Initialize (setup slab with instrument params)
+│   └── CommitFill (execute fill, write receipt)
+
+Common Library (~600 LOC)
+├── Types (Side, PercolatorError, etc.)
+├── Instruction helpers (InstructionReader)
+└── Account helpers (validation, borrowing)
+```
