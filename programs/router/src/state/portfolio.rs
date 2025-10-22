@@ -38,7 +38,34 @@ pub struct Portfolio {
 impl Portfolio {
     pub const LEN: usize = core::mem::size_of::<Self>();
 
-    /// Initialize new portfolio
+    /// Initialize portfolio in-place (avoids stack allocation)
+    ///
+    /// This method initializes the portfolio fields directly without creating
+    /// a large temporary struct on the stack (which would exceed BPF's 4KB limit).
+    pub fn initialize_in_place(&mut self, router_id: Pubkey, user: Pubkey, bump: u8) {
+        self.router_id = router_id;
+        self.user = user;
+        self.equity = 0;
+        self.im = 0;
+        self.mm = 0;
+        self.free_collateral = 0;
+        self.last_mark_ts = 0;
+        self.exposure_count = 0;
+        self.bump = bump;
+        self._padding = [0; 5];
+
+        // Zero out the exposures array using ptr::write_bytes (efficient and stack-safe)
+        unsafe {
+            core::ptr::write_bytes(
+                self.exposures.as_mut_ptr(),
+                0,
+                MAX_SLABS * MAX_INSTRUMENTS,
+            );
+        }
+    }
+
+    /// Initialize new portfolio (for tests only - uses stack)
+    #[cfg(test)]
     pub fn new(router_id: Pubkey, user: Pubkey, bump: u8) -> Self {
         Self {
             router_id,

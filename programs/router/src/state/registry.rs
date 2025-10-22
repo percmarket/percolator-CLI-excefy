@@ -54,7 +54,29 @@ pub struct SlabRegistry {
 impl SlabRegistry {
     pub const LEN: usize = core::mem::size_of::<Self>();
 
-    /// Initialize new registry
+    /// Initialize registry in-place (avoids stack allocation)
+    ///
+    /// This method initializes the registry fields directly without creating
+    /// a large temporary struct on the stack (which would exceed BPF's 4KB limit).
+    pub fn initialize_in_place(&mut self, router_id: Pubkey, governance: Pubkey, bump: u8) {
+        self.router_id = router_id;
+        self.governance = governance;
+        self.slab_count = 0;
+        self.bump = bump;
+        self._padding = [0; 5];
+
+        // Zero out the slabs array using ptr::write_bytes (efficient and stack-safe)
+        unsafe {
+            core::ptr::write_bytes(
+                self.slabs.as_mut_ptr(),
+                0,
+                MAX_SLABS,
+            );
+        }
+    }
+
+    /// Initialize new registry (for tests only - uses stack)
+    #[cfg(test)]
     pub fn new(router_id: Pubkey, governance: Pubkey, bump: u8) -> Self {
         Self {
             router_id,

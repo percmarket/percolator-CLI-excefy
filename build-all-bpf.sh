@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build all Percolator programs for Solana BPF
+# Build all Percolator programs for Solana BPF using cargo build-sbf
 #
 
 set -e
@@ -8,35 +8,42 @@ set -e
 cd "$(dirname "$0")"
 
 echo "========================================="
-echo "Building all Percolator BPF programs"
+echo "Building with Solana SDK (cargo build-sbf)"
 echo "========================================="
 echo
 
-# Build slab program
-echo ">>> Building slab program..."
-cd programs/slab
-./build-bpf.sh
-cd ../..
+# Add Solana and cargo to PATH
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
+
+# Check for cargo build-sbf
+if ! command -v cargo-build-sbf &> /dev/null; then
+    echo "Error: cargo build-sbf not found"
+    echo "Please install Solana SDK: sh -c \"\$(curl -sSfL https://release.anza.xyz/stable/install)\""
+    exit 1
+fi
+
+echo "✓ Solana version: $(solana --version 2>/dev/null || echo 'not in PATH')"
+echo "✓ cargo build-sbf version: $(cargo build-sbf --version 2>&1 | head -1)"
 echo
 
-# Build router program
-echo ">>> Building router program..."
-cd programs/router
-./build-bpf.sh
-cd ../..
-echo
-
-# Build oracle program
-echo ">>> Building oracle program..."
-cd programs/oracle
-./build-bpf.sh
-cd ../..
-echo
+# Build each program
+for program in programs/slab programs/router programs/oracle; do
+    echo ">>> Building $program..."
+    cd "$program"
+    cargo build-sbf
+    cd - > /dev/null
+    echo
+done
 
 echo "========================================="
-echo "All builds complete!"
+echo "Build complete!"
 echo "========================================="
 echo
-echo "Binaries located in: ./target/deploy/"
-ls -lh target/deploy/*.so 2>/dev/null || echo "  (no .so files found yet - run cargo build-sbf first)"
+
+# Find the output directory
+TARGET_DIR="target/deploy"
+echo "Build artifacts in: ./$TARGET_DIR/"
+if [ -d "$TARGET_DIR" ]; then
+    ls -lh "$TARGET_DIR"/*.so 2>/dev/null || echo "  (no .so files found)"
+fi
 echo

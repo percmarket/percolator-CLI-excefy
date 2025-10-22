@@ -2,6 +2,85 @@
 
 A sharded perpetual exchange protocol for Solana, implementing the design from `plan.md`.
 
+## **Design**
+
+### **Router Program**
+- Owns all collateral and user portfolios.  
+- Computes margin (IM/MM) and equity for every account.  
+- Executes trades, settlements, and liquidations.  
+- Talks to whitelisted matcher programs via CPI.
+
+### **Matcher (Slab) Program**
+- LP-owned program that maintains its own order book (`slab_state` account).  
+- Exposes prices and matching logic.  
+- Never holds or moves funds.  
+- Accepts only Router-authorized CPIs for trade execution.
+
+
+## **Core Router Responsibilities**
+- **Maintain:**
+  - `UserPortfolio { equity, exposures, im, mm }` per trader/LP.  
+  - Central collateral vaults (SPL tokens).  
+  - Registry of whitelisted matchers `(program_id, version_hash, oracle_id, fee_caps, etc.)`.  
+
+- **Before routing any order:**
+  - Verify maker/taker margin sufficiency in Router portfolios.  
+  - Check matcher program is allow-listed and oracle-aligned.  
+
+- **Execute orders:**
+  - Read top-K quotes directly from each matcher’s `QuoteCache`.  
+  - Choose best price/quantity split.  
+  - CPI → `matcher.commit_fill(side, qty, limit_px, receipt_pda)`.  
+  - Read receipts and update both portfolios (PnL, fees, exposures).  
+
+- **Handle liquidations:**
+  - Detect under-margin accounts (`equity < MM`).  
+  - Read best bids/asks from matchers.  
+  - Issue reduce-only `commit_fill` CPIs within liquidation price bands.  
+  - Repeat until account is solvent or flat.  
+
+
+## **Core Matcher Responsibilities**
+- Own a single writable `slab_state` account (book + header + quote cache).  
+- Maintain local book and update `QuoteCache` (K levels per side).  
+
+- **Verify at CPI entry:**
+  - Caller is the Router authority.  
+  - `Header.seqno` unchanged since Router read `QuoteCache`.  
+  - `limit_px` respected; tick/lot alignment correct.  
+  - `receipt_pda.owner == matcher_program_id` and unused.  
+
+- **On `commit_fill`:**
+  - Match orders and write one `FillReceipt`  
+    (`used=1, seqno_committed, filled_qty, vwap, notional, fee`).  
+  - Mutate only its own state + the receipt PDA.  
+  - No token transfers, no external CPIs.  
+
+
+## **Boundary & Safety Rules**
+- All funds stay in Router vaults; matchers never see token accounts.  
+- Router → Matcher is one-way CPI; matchers never call back.  
+- Router whitelist controls which matcher programs can be invoked.  
+- Router and matchers share a fixed data layout for `Header` and `QuoteCache`; version hash checked at registration.  
+- **Atomicity:** if any CPI fails, the transaction aborts and no Router state changes.  
+- **TOCTOU protection:** `seqno` mismatch causes CPI failure (no partial fills).  
+- **Oracle alignment:** Router skips matchers whose `mark_px` deviates > ε from oracle.  
+- Optional per-matcher exposure cap `E_max` to bound router-routed notional.  
+
+## **Capital & Margin Flow**
+- Every participant (trader or LP) deposits collateral into Router vaults → creates a `UserPortfolio`.  
+- LP’s quotes on their matcher are backed by the LP’s Router-held equity.  
+- Router checks LP margin before routing to their matcher.  
+- Trade PnL, fees, and margin adjustments occur only inside Router state.  
+
+## **Liquidation / Deleveraging**
+- **Trigger:** `equity < MM`.  
+- Router builds reduce-only orders using current exposures.  
+- Reads quotes from matchers (bids/asks) and executes via `commit_fill`.  
+- Applies liquidation fee and updates portfolios.  
+- If equity still < MM, repeats; if equity ≤ 0, records bad debt (v0) for later settlement.  
+
+
 ## Architecture
 
 Percolator consists of two main on-chain programs:

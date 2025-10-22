@@ -44,10 +44,10 @@ pub fn process_initialize_registry(
 
     drop(data);
 
-    // Initialize the registry
+    // Initialize the registry in-place (avoids stack overflow)
     let registry = unsafe { borrow_account_data_mut::<SlabRegistry>(registry_account)? };
 
-    *registry = SlabRegistry::new(*program_id, *governance, bump);
+    registry.initialize_in_place(*program_id, *governance, bump);
 
     msg!("Registry initialized successfully");
     Ok(())

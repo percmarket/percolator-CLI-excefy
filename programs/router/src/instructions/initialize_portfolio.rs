@@ -43,10 +43,10 @@ pub fn process_initialize_portfolio(
 
     drop(data);
 
-    // Initialize the portfolio
+    // Initialize the portfolio in-place (avoids stack overflow)
     let portfolio = unsafe { borrow_account_data_mut::<Portfolio>(portfolio_account)? };
 
-    *portfolio = Portfolio::new(*program_id, *user, bump);
+    portfolio.initialize_in_place(*program_id, *user, bump);
 
     msg!("Portfolio initialized successfully");
     Ok(())

@@ -29,4 +29,11 @@ pub mod entrypoint;
 pub mod instructions;
 pub mod state;
 
+// Panic handler for no_std builds (only for Solana BPF)
+#[cfg(all(target_os = "solana", not(test)))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
 pub use state::{PriceOracle, PRICE_ORACLE_SIZE};

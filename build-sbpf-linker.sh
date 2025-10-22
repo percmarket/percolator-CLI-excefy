@@ -2,9 +2,6 @@
 #
 # Build all programs using sbpf-linker (nightly)
 #
-# This requires:
-# - Rust nightly toolchain
-# - sbpf-linker installed
 
 set -e
 
@@ -15,10 +12,12 @@ echo "Building with sbpf-linker (nightly)"
 echo "========================================="
 echo
 
+# Add cargo bin to PATH
+export PATH="$HOME/.cargo/bin:$PATH"
+
 # Check for sbpf-linker
 if ! command -v sbpf-linker &> /dev/null; then
     echo "Error: sbpf-linker not found"
-    echo "Install from: https://github.com/blueshift-gg/upstream-pinocchio-escrow"
     exit 1
 fi
 
@@ -32,13 +31,17 @@ echo "✓ sbpf-linker found: $(which sbpf-linker)"
 echo "✓ Using toolchain: nightly"
 echo
 
-# Build each program with nightly + sbpf-linker
+# Build each program
 for program in programs/slab programs/router programs/oracle; do
     echo ">>> Building $program with sbpf-linker..."
     cd "$program"
 
-    # Use nightly and let .cargo/config.toml handle sbpf-linker
-    cargo +nightly build-sbf --release
+    # Build for BPF target using built-in bpfel-unknown-none target
+    RUSTFLAGS="-C panic=abort -Z unstable-options -C panic=immediate-abort" \
+    cargo +nightly build \
+        --target bpfel-unknown-none \
+        --release \
+        -Z build-std=core,alloc
 
     cd - > /dev/null
     echo
@@ -48,6 +51,11 @@ echo "========================================="
 echo "sbpf-linker builds complete!"
 echo "========================================="
 echo
-echo "Binaries in: ./target/deploy/"
-ls -lh target/deploy/*.so 2>/dev/null || echo "  (no .so files found)"
+
+# Find the output directory
+TARGET_DIR="target/bpfel-unknown-none/release"
+echo "Build artifacts in: ./$TARGET_DIR/"
+find "$TARGET_DIR" -type f -name "*.so" -o -name "percolator_*" 2>/dev/null | grep -v "\.d$" | while read -r file; do
+    ls -lh "$file"
+done || echo "  (no binaries found yet)"
 echo
