@@ -2972,9 +2972,6 @@ dependencies = [
 name = "percolator-integration-tests"
 version = "0.1.0"
 dependencies = [
- "percolator-oracle",
- "percolator-router",
- "percolator-slab",
  "solana-program",
  "solana-program-test",
  "solana-sdk",

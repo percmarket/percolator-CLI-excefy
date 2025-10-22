@@ -53,6 +53,7 @@ pub fn process_initialize_registry(
     Ok(())
 }
 
-#[cfg(test)]
+// Exclude test module from BPF builds to avoid stack overflow from test-only functions
+#[cfg(all(test, not(target_os = "solana")))]
 #[path = "initialize_test.rs"]
 mod initialize_test;

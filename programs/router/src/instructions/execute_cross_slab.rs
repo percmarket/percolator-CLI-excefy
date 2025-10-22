@@ -221,6 +221,7 @@ fn calculate_initial_margin(net_exposure: i64, splits: &[SlabSplit]) -> u128 {
     (abs_exposure * avg_price * 10) / (100 * 1_000_000)
 }
 
-#[cfg(test)]
+// Exclude test module from BPF builds to avoid stack overflow from test-only functions
+#[cfg(all(test, not(target_os = "solana")))]
 #[path = "execute_cross_slab_test.rs"]
 mod execute_cross_slab_test;

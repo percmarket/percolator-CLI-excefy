@@ -108,7 +108,8 @@ impl SlabRegistry {
     }
 
     /// Initialize new registry (for tests only - uses stack)
-    #[cfg(test)]
+    /// Excluded from BPF builds to avoid stack overflow
+    #[cfg(all(test, not(target_os = "solana")))]
     pub fn new(router_id: Pubkey, governance: Pubkey, bump: u8) -> Self {
         Self {
             router_id,
