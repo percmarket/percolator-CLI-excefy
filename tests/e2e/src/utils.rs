@@ -4,7 +4,7 @@ use solana_sdk::signature::Keypair;
 
 /// Test constants matching the program expectations
 pub const SCALE: i64 = 1_000_000;
-pub const SLAB_STATE_SIZE: usize = 4096; // 4KB - v0 minimal slab (~3.5KB actual)
+pub const SLAB_STATE_SIZE: usize = 3408; // SlabHeader(200) + QuoteCache(136) + BookArea(3072)
 pub const K: usize = 4; // Quote cache levels per side
 
 /// Serialize i64 to little-endian bytes
