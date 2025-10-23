@@ -211,6 +211,7 @@ pub fn get_slab_quotes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use percolator_common::QuoteLevel;
 
     fn make_quote_level(px: i64, qty: i64) -> QuoteLevel {
         QuoteLevel {
