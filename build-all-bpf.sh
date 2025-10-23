@@ -27,7 +27,7 @@ echo "✓ cargo build-sbf version: $(cargo build-sbf --version 2>&1 | head -1)"
 echo
 
 # Build each program
-for program in programs/slab programs/router programs/oracle; do
+for program in programs/slab programs/amm programs/router programs/oracle; do
     echo ">>> Building $program..."
     cd "$program"
     cargo build-sbf
