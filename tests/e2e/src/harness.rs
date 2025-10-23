@@ -79,6 +79,7 @@ pub struct TestContext {
     pub client: RpcClient,
     pub payer: Keypair,
     pub slab_program_id: Pubkey,
+    pub amm_program_id: Pubkey,
     pub router_program_id: Pubkey,
     pub oracle_program_id: Pubkey,
 }
@@ -125,15 +126,18 @@ impl TestContext {
         }
 
         let slab_path = workspace_root.join("target/deploy/percolator_slab.so");
+        let amm_path = workspace_root.join("target/deploy/percolator_amm.so");
         let router_path = workspace_root.join("target/deploy/percolator_router.so");
         let oracle_path = workspace_root.join("target/deploy/percolator_oracle.so");
 
         let slab_program_id = Self::deploy_program(&client, &payer, slab_path.to_str().unwrap())?;
+        let amm_program_id = Self::deploy_program(&client, &payer, amm_path.to_str().unwrap())?;
         let router_program_id = Self::deploy_program(&client, &payer, router_path.to_str().unwrap())?;
         let oracle_program_id = Self::deploy_program(&client, &payer, oracle_path.to_str().unwrap())?;
 
         println!("Programs deployed:");
         println!("  Slab:   {}", slab_program_id);
+        println!("  AMM:    {}", amm_program_id);
         println!("  Router: {}", router_program_id);
         println!("  Oracle: {}", oracle_program_id);
 
@@ -142,6 +146,7 @@ impl TestContext {
             client,
             payer,
             slab_program_id,
+            amm_program_id,
             router_program_id,
             oracle_program_id,
         })
