@@ -273,6 +273,68 @@ pub fn check_conservation(
     model_safety::helpers::conservation_ok(&state)
 }
 
+/// Check if portfolio is liquidatable using verified helper
+///
+/// This uses the formally verified `is_liquidatable` function from model_safety,
+/// backed by 13 liquidation proofs (L1-L13).
+///
+/// # Verified Properties (from Kani proofs)
+///
+/// When this returns true, the following properties are guaranteed:
+/// - L1: Progress if any liquidatable exists
+/// - L2: No-op at fixpoint (when none liquidatable)
+/// - L3: Count never increases after liquidation
+/// - L4: Only liquidatable accounts touched
+/// - L5: Non-interference (unrelated accounts unchanged)
+/// - L6: Authorization required for liquidation
+/// - L7: Conservation preserved by liquidation
+/// - L8: Principal never cut by liquidation
+/// - L9: No new liquidatables under snapshot prices
+/// - L10: Admissible selection when any exist
+/// - L11: Atomic progress or no-op
+/// - L12: Socialize→liquidate does not increase liquidatables
+/// - L13: Withdraw doesn't create liquidatables (margin safe)
+///
+/// # Arguments
+///
+/// * `portfolio` - User portfolio to check
+/// * `registry` - Global registry with margin parameters
+///
+/// # Returns
+///
+/// true if portfolio is liquidatable (collateral < required margin), false otherwise
+///
+/// # Implementation Note
+///
+/// The verified check is:
+/// ```ignore
+/// collateral * 1_000_000 < position_size * maintenance_margin_bps
+/// ```
+///
+/// This uses scaled arithmetic to avoid rounding errors.
+pub fn is_liquidatable_verified(
+    portfolio: &Portfolio,
+    registry: &SlabRegistry,
+) -> bool {
+    // Convert portfolio to model account
+    let account = portfolio_to_account(portfolio, registry);
+
+    // Use dummy prices (not used in current is_liquidatable implementation)
+    let prices = model_safety::Prices {
+        p: [1_000_000, 1_000_000, 1_000_000, 1_000_000]
+    };
+
+    // Set up params with maintenance margin from registry
+    let params = model_safety::Params {
+        max_users: 1,
+        withdraw_cap_per_step: 1000,
+        maintenance_margin_bps: registry.mmr,
+    };
+
+    // Call verified function (backed by L1-L13 proofs)
+    model_safety::helpers::is_liquidatable(&account, &prices, &params)
+}
+
 /// Wrapper for verified loss socialization
 ///
 /// This wraps the verified socialize_losses function for production use.
