@@ -6,3 +6,9 @@ pub mod adversary;
 
 #[cfg(kani)]
 pub mod safety;
+
+#[cfg(kani)]
+pub mod minimal;
+
+#[cfg(kani)]
+pub mod medium;

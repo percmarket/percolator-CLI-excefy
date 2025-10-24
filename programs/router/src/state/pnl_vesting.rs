@@ -521,8 +521,8 @@ mod tests {
         global.pnl_index = FP_ONE / 2;
         on_user_touch(principal, &mut pnl, &mut vested_pnl, &mut last_slot, &mut checkpoint, &global, &params, 1000);
 
-        // Negative PnL scales with haircut (becomes less negative)
-        assert_eq!(pnl, -10_000_000); // -20M * 0.5
+        // Negative PnL is unaffected by haircut (losses never get haircutted)
+        assert_eq!(pnl, -20_000_000); // Stays at -20M (unchanged)
         // vested_pnl clamps to pnl (both negative)
         assert_eq!(vested_pnl, pnl);
         assert!(vested_pnl <= pnl);
