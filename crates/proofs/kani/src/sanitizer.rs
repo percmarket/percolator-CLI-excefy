@@ -13,6 +13,9 @@ const MAX_SLOPE: u128 = 10_000u128;
 const MAX_VAULT: u128 = 10_000_000u128;
 const MAX_INSURANCE: u128 = 1_000_000u128;
 const MAX_FEES: u128 = 1_000_000u128;
+const MAX_POSITION: u128 = 2_000_000u128;
+const MAX_PRICE: u64 = 5_000_000u64; // Max $5.00 per unit (in 1e6 scale)
+const MIN_PRICE: u64 = 100_000u64;    // Min $0.10 per unit
 
 pub trait Sanitize {
     fn sanitize(self) -> Self;
@@ -52,6 +55,13 @@ impl Sanitize for State {
             } else {
                 u.warmup_state.slope_per_step
             };
+
+            // Clamp position size
+            u.position_size = if u.position_size > MAX_POSITION {
+                u.position_size % MAX_POSITION
+            } else {
+                u.position_size
+            };
         }
 
         // Clamp vault, insurance, fees
@@ -75,4 +85,30 @@ impl Sanitize for State {
 
         self
     }
+}
+
+impl Sanitize for Prices {
+    fn sanitize(mut self) -> Prices {
+        // Clamp all prices to reasonable bounds and ensure non-zero
+        for i in 0..self.p.len() {
+            self.p[i] = if self.p[i] > MAX_PRICE {
+                (self.p[i] % (MAX_PRICE - MIN_PRICE)) + MIN_PRICE
+            } else if self.p[i] < MIN_PRICE {
+                MIN_PRICE
+            } else {
+                self.p[i]
+            };
+        }
+        self
+    }
+}
+
+/// Convenience function for sanitizing state in proofs
+pub fn sanitize_state(s: State) -> State {
+    s.sanitize()
+}
+
+/// Convenience function for sanitizing prices in proofs
+pub fn sanitize_prices(p: Prices) -> Prices {
+    p.sanitize()
 }

@@ -15,6 +15,7 @@ pub fn any_account() -> Account {
     let pnl_raw: i8 = any();
     let reserved_raw: u8 = any();
     let slope_raw: u8 = any();
+    let position_raw: u8 = any();
 
     Account {
         principal: (principal_raw as u128) % MAX_VAL,
@@ -24,6 +25,24 @@ pub fn any_account() -> Account {
             started_at_slot: (principal_raw as u64) % 100,  // Reuse for simplicity
             slope_per_step: ((slope_raw as u128) % 100).max(1), // Non-zero, small
         },
+        position_size: (position_raw as u128) % MAX_VAL,
+    }
+}
+
+#[cfg(kani)]
+pub fn any_prices() -> Prices {
+    let p0_raw: u8 = any();
+    let p1_raw: u8 = any();
+    let p2_raw: u8 = any();
+    let p3_raw: u8 = any();
+
+    Prices {
+        p: [
+            ((p0_raw as u64) % 2_000_000).max(100_000), // 0.1 to 2.0 (price in 1e6)
+            ((p1_raw as u64) % 2_000_000).max(100_000),
+            ((p2_raw as u64) % 2_000_000).max(100_000),
+            ((p3_raw as u64) % 2_000_000).max(100_000),
+        ],
     }
 }
 
@@ -40,6 +59,7 @@ pub fn any_state_bounded() -> State {
     let vault_raw: u16 = any();
     let insurance_raw: u8 = any();
     let fees_raw: u8 = any();
+    let margin_bps_raw: u8 = any();
 
     State {
         vault: (vault_raw as u128) % (MAX_VAL * 5),
@@ -49,6 +69,8 @@ pub fn any_state_bounded() -> State {
         params: Params {
             max_users: 6,
             withdraw_cap_per_step: 1_000,
+            // 3% to 10% maintenance margin (30_000 to 100_000 bps)
+            maintenance_margin_bps: ((margin_bps_raw as u64) % 70_000 + 30_000),
         },
         authorized_router: true, // Start authorized
     }

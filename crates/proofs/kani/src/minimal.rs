@@ -13,6 +13,7 @@ fn i1_concrete_single_user() {
         pnl_ledger: 500,  // Positive PnL
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -23,7 +24,7 @@ fn i1_concrete_single_user() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -43,6 +44,7 @@ fn i3_concrete_unauthorized() {
         pnl_ledger: 500,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -53,7 +55,7 @@ fn i3_concrete_unauthorized() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: false,  // NOT authorized
     };
 
@@ -82,6 +84,7 @@ fn i6_concrete_matcher() {
         pnl_ledger: 500,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -92,7 +95,7 @@ fn i6_concrete_matcher() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -111,6 +114,7 @@ fn deposit_concrete() {
         pnl_ledger: 0,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -121,7 +125,7 @@ fn deposit_concrete() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -144,6 +148,7 @@ fn withdrawal_concrete() {
         pnl_ledger: 0,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -154,7 +159,7 @@ fn withdrawal_concrete() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -179,6 +184,7 @@ fn i1_bounded_deficit() {
         pnl_ledger: 500,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -189,7 +195,7 @@ fn i1_bounded_deficit() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -211,6 +217,7 @@ fn deposit_bounded_amount() {
         pnl_ledger: 0,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = arrayvec::ArrayVec::<Account, 6>::new();
@@ -221,7 +228,7 @@ fn deposit_bounded_amount() {
         insurance_fund: 0,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 

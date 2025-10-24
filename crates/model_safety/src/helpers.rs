@@ -83,3 +83,63 @@ pub fn balances_unchanged(before: &State, after: &State) -> bool {
         a.principal == b.principal && a.pnl_ledger == b.pnl_ledger
     })
 }
+
+// ============================================================================
+// Liquidation Helpers
+// ============================================================================
+
+use crate::state::Prices;
+
+/// Check if an account is liquidatable
+/// An account is liquidatable if:
+///   collateral_value < position_size * maintenance_margin
+/// Where collateral_value = principal + max(0, pnl_ledger)
+pub fn is_liquidatable(acc: &Account, _prices: &Prices, params: &Params) -> bool {
+    // Calculate collateral value
+    let collateral = add_u128(acc.principal, clamp_pos_i128(acc.pnl_ledger));
+
+    // Calculate required margin: position_size * maintenance_margin_bps / 1_000_000
+    // Using safe math to avoid overflow
+    let position_value = acc.position_size;
+
+    // If no position, not liquidatable
+    if position_value == 0 {
+        return false;
+    }
+
+    // Required margin = position * margin_bps / 1_000_000
+    // To avoid overflow, check: collateral * 1_000_000 < position * margin_bps
+    let collateral_scaled = mul_u128(collateral, 1_000_000);
+    let required_margin_scaled = mul_u128(position_value, params.maintenance_margin_bps as u128);
+
+    collateral_scaled < required_margin_scaled
+}
+
+/// Count liquidatable accounts in the state
+pub fn liquidatable_count(s: &State, prices: &Prices) -> u8 {
+    let mut count = 0u8;
+    for acc in s.users.iter() {
+        if is_liquidatable(acc, prices, &s.params) {
+            count = count.saturating_add(1);
+        }
+    }
+    count
+}
+
+/// Check if state is valid for liquidation operations
+/// (auth enabled, compute units fit, etc.)
+pub fn valid_for_liquidation(s: &State, _prices: &Prices) -> bool {
+    // In the simplified model, just check authorization
+    s.authorized_router
+}
+
+/// Choose a liquidatable account index (simple strategy: first liquidatable)
+pub fn choose_liquidatable_index(s: &State, prices: &Prices) -> usize {
+    for (i, acc) in s.users.iter().enumerate() {
+        if is_liquidatable(acc, prices, &s.params) {
+            return i;
+        }
+    }
+    // Fallback to 0 if none found (caller should check count > 0 first)
+    0
+}

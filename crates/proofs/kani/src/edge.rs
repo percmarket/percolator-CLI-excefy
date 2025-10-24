@@ -27,6 +27,7 @@ pub fn make_1user_with_reserved(
             started_at_slot: 0,
             slope_per_step: slope,
         },
+        position_size: 0,
     };
 
     let mut users = ArrayVec::new();
@@ -44,6 +45,7 @@ pub fn make_1user_with_reserved(
         params: Params {
             max_users: 6,
             withdraw_cap_per_step: 1_000,
+            maintenance_margin_bps: 50_000,
         },
         authorized_router: true,
     }
@@ -62,6 +64,7 @@ pub fn make_3user_state(
             pnl_ledger: pnls[i],
             reserved_pnl: 0,
             warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+            position_size: 0,
         });
     }
 
@@ -77,7 +80,7 @@ pub fn make_3user_state(
         insurance_fund: 100,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1_000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1_000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     }
 }
@@ -152,12 +155,14 @@ fn edge_socialization_all_losers() {
         pnl_ledger: -500,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
     let user2 = Account {
         principal: 1000,
         pnl_ledger: -300,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = ArrayVec::new();
@@ -169,7 +174,7 @@ fn edge_socialization_all_losers() {
         insurance_fund: 100,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1_000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1_000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -337,12 +342,14 @@ fn edge_total_wipeout_socialization() {
         pnl_ledger: 300,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
     let user2 = Account {
         principal: 1000,
         pnl_ledger: 200,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = ArrayVec::new();
@@ -354,7 +361,7 @@ fn edge_total_wipeout_socialization() {
         insurance_fund: 100,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1_000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1_000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 
@@ -403,12 +410,14 @@ fn edge_exact_deficit_balance() {
         pnl_ledger: pnl1,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
     let user2 = Account {
         principal: 1000,
         pnl_ledger: pnl2,
         reserved_pnl: 0,
         warmup_state: Warmup { started_at_slot: 0, slope_per_step: 10 },
+        position_size: 0,
     };
 
     let mut users = ArrayVec::new();
@@ -420,7 +429,7 @@ fn edge_exact_deficit_balance() {
         insurance_fund: 100,
         fees_outstanding: 0,
         users,
-        params: Params { max_users: 6, withdraw_cap_per_step: 1_000 },
+        params: Params { max_users: 6, withdraw_cap_per_step: 1_000, maintenance_margin_bps: 50_000 },
         authorized_router: true,
     };
 

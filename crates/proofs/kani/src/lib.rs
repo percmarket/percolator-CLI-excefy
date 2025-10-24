@@ -32,3 +32,6 @@ pub mod medium;
 
 #[cfg(kani)]
 pub mod edge;
+
+#[cfg(kani)]
+pub mod liquidation;

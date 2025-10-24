@@ -194,5 +194,90 @@ pub fn matcher_noise(s: State) -> State {
     s
 }
 
+// ============================================================================
+// Liquidation Transitions
+// ============================================================================
+
+use crate::state::Prices;
+use crate::helpers::{is_liquidatable, choose_liquidatable_index};
+
+/// Liquidate one account (router chooses first liquidatable)
+/// If no accounts are liquidatable, this is a no-op
+pub fn liquidate_one(s: State, prices: &Prices) -> State {
+    // I3: Check authorization
+    if !s.authorized_router {
+        return s;
+    }
+
+    // Find a liquidatable account
+    let uid = choose_liquidatable_index(&s, prices);
+
+    // Verify it's actually liquidatable
+    if uid >= s.users.len() || !is_liquidatable(&s.users[uid], prices, &s.params) {
+        return s; // No-op if none found
+    }
+
+    // Liquidate the account
+    liquidate_account(s, uid, prices)
+}
+
+/// Liquidate a specific account by index
+/// If the account is not liquidatable, this is a no-op
+pub fn liquidate_account(mut s: State, uid: usize, prices: &Prices) -> State {
+    // I3: Check authorization
+    if !s.authorized_router {
+        return s;
+    }
+
+    if uid >= s.users.len() {
+        return s;
+    }
+
+    // Check if account is actually liquidatable
+    if !is_liquidatable(&s.users[uid], prices, &s.params) {
+        return s; // No-op
+    }
+
+    // Simplified liquidation logic:
+    // 1. Close position (set position_size to 0)
+    // 2. Realize the loss from PnL if negative
+    // 3. Deduct from insurance fund or socialize if needed
+
+    let user = &mut s.users[uid];
+
+    // Close position
+    user.position_size = 0;
+
+    // If user has negative PnL, realize the loss
+    if user.pnl_ledger < 0 {
+        let loss = clamp_pos_i128(sub_i128(0, user.pnl_ledger));
+
+        // Try to cover from insurance fund first
+        if s.insurance_fund >= loss {
+            s.insurance_fund = sub_u128(s.insurance_fund, loss);
+            // Set PnL to 0 (loss covered)
+            user.pnl_ledger = 0;
+        } else {
+            // Insurance fund depleted, socialize remaining loss
+            let covered = s.insurance_fund;
+            s.insurance_fund = 0;
+
+            // Partially reduce this user's negative PnL by covered amount
+            user.pnl_ledger = add_i128(user.pnl_ledger, u128_to_i128(covered));
+
+            // Note: remaining loss would be socialized, but we leave PnL negative for now
+            // In a full model, we'd call socialize_losses here
+        }
+    }
+
+    s
+}
+
+/// Liquidate with unauthorized router (should be no-op for L6)
+pub fn liquidate_one_unauthorized(mut s: State, prices: &Prices) -> State {
+    s.authorized_router = false;
+    liquidate_one(s, prices)
+}
+
 // Re-export helpers for use in transitions
 use crate::helpers::sum_effective_winners;
