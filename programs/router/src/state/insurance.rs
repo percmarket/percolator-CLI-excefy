@@ -76,7 +76,7 @@ impl InsuranceState {
         current_day > self.last_day
     }
 
-    /// Accrue insurance fees from a trade
+    /// Accrue insurance fees from a trade (using verified math)
     ///
     /// Called during fill processing to siphon a % of notional to insurance fund.
     ///
@@ -86,10 +86,23 @@ impl InsuranceState {
     ///
     /// # Returns
     /// Amount to transfer to insurance vault
+    ///
+    /// # Safety
+    ///
+    /// Uses formally verified saturating arithmetic from model_safety::math
+    /// to prevent overflow/underflow bugs.
     pub fn accrue_from_fill(&mut self, notional: u128, params: &InsuranceParams) -> u128 {
-        let accrual = (notional * params.fee_bps_to_insurance as u128) / 10_000;
-        self.vault_balance = self.vault_balance.saturating_add(accrual);
-        self.total_fees_accrued = self.total_fees_accrued.saturating_add(accrual);
+        use model_safety::math::{mul_u128, div_u128, add_u128};
+
+        // Calculate accrual = (notional * fee_bps) / 10_000
+        // Use verified math to prevent overflow
+        let numerator = mul_u128(notional, params.fee_bps_to_insurance as u128);
+        let accrual = div_u128(numerator, 10_000);
+
+        // Update balances using verified saturating addition
+        self.vault_balance = add_u128(self.vault_balance, accrual);
+        self.total_fees_accrued = add_u128(self.total_fees_accrued, accrual);
+
         accrual
     }
 

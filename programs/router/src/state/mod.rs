@@ -4,6 +4,7 @@ pub mod registry;
 pub mod lp_bucket;
 pub mod insurance;
 pub mod pnl_vesting;
+pub mod model_bridge;
 
 #[cfg(test)]
 pub mod withdrawal_limits_test;
@@ -14,3 +15,4 @@ pub use registry::*;
 pub use lp_bucket::*;
 pub use insurance::*;
 pub use pnl_vesting::*;
+pub use model_bridge::*;
