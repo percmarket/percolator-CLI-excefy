@@ -375,10 +375,12 @@ pub struct RiskEngine {
     /// Used to avoid O(n²) largest-remainder selection.
     pub adl_idx_scratch: [u16; MAX_ACCOUNTS],
 
-    /// Scratch: per-account exclusion flags for batched ADL during liquidation.
-    /// Set to 1 for accounts that should be excluded from profit-funding ADL pass.
-    /// Only meaningful for indices visited in current window; cleared per-window.
-    pub adl_exclude_scratch: [u8; MAX_ACCOUNTS],
+    /// Epoch-based exclusion for batched ADL during liquidation.
+    /// Account is excluded if adl_exclude_epoch[idx] == adl_epoch.
+    /// Avoids O(MAX_ACCOUNTS) memset per crank by incrementing epoch instead.
+    pub adl_exclude_epoch: [u16; MAX_ACCOUNTS],
+    /// Current ADL exclusion epoch (incremented each crank)
+    pub adl_epoch: u16,
 
     // ========================================
     // Lifetime Counters (telemetry)
@@ -679,7 +681,8 @@ impl RiskEngine {
             warmed_neg_total: 0,
             adl_remainder_scratch: [0; MAX_ACCOUNTS],
             adl_idx_scratch: [0; MAX_ACCOUNTS],
-            adl_exclude_scratch: [0; MAX_ACCOUNTS],
+            adl_exclude_epoch: [0; MAX_ACCOUNTS],
+            adl_epoch: 0,
             lifetime_liquidations: 0,
             lifetime_force_realize_closes: 0,
             net_lp_pos: 0,
@@ -1147,6 +1150,10 @@ impl RiskEngine {
 
     /// Set owner pubkey for an account
     pub fn set_owner(&mut self, idx: u16, owner: [u8; 32]) -> Result<()> {
+        // Reject operations on insurance account (slot 0)
+        if idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
         if idx as usize >= MAX_ACCOUNTS || !self.is_used(idx as usize) {
             return Err(RiskError::Unauthorized);
         }
@@ -1156,6 +1163,10 @@ impl RiskEngine {
 
     /// Add fee credits to an account (e.g., user deposits fee credits)
     pub fn add_fee_credits(&mut self, idx: u16, amount: u128) -> Result<()> {
+        // Reject operations on insurance account (slot 0)
+        if idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
         if idx as usize >= MAX_ACCOUNTS || !self.is_used(idx as usize) {
             return Err(RiskError::Unauthorized);
         }
@@ -1194,6 +1205,10 @@ impl RiskEngine {
         now_slot: u64,
         oracle_price: u64,
     ) -> Result<u128> {
+        // Reject operations on insurance account (slot 0)
+        if idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
         if idx as usize >= MAX_ACCOUNTS || !self.is_used(idx as usize) {
             return Err(RiskError::AccountNotFound);
         }
@@ -1379,8 +1394,8 @@ impl RiskEngine {
 
         // Crank is always allowed (even in risk mode - it's how we exit risk mode)
 
-        // Clear exclusion scratch for this crank
-        self.adl_exclude_scratch = [0u8; MAX_ACCOUNTS];
+        // Increment exclusion epoch (avoids O(MAX_ACCOUNTS) memset per crank)
+        self.adl_epoch = self.adl_epoch.wrapping_add(1);
 
         // Accumulators for deferred ADL
         let mut total_profit_to_fund: u128 = 0;
@@ -1458,7 +1473,7 @@ impl RiskEngine {
 
                             // Mark for exclusion from profit-funding ADL
                             if deferred.excluded {
-                                self.adl_exclude_scratch[idx] = 1;
+                                self.adl_exclude_epoch[idx] = self.adl_epoch;
                             }
                         }
                         Ok((false, _)) => {} // Not liquidatable
@@ -1481,13 +1496,7 @@ impl RiskEngine {
             self.apply_adl(total_unpaid_loss)?;
         }
 
-        // Garbage collect dust accounts
-        let (num_gc_closed, gc_unpaid_loss) = self.garbage_collect_dust();
-        if gc_unpaid_loss > 0 {
-            self.apply_adl(gc_unpaid_loss)?;
-        }
-
-        // Handle caller's maintenance fee with 50% time forgiveness
+        // Handle caller's maintenance fee with 50% time forgiveness (BEFORE GC so drained accounts are collected)
         let mut slots_forgiven: u64 = 0;
         let mut caller_settle_ok = true;
         if let Some(caller) = caller_idx {
@@ -1501,6 +1510,12 @@ impl RiskEngine {
                     caller_settle_ok = false;
                 }
             }
+        }
+
+        // Garbage collect dust accounts
+        let (num_gc_closed, gc_unpaid_loss) = self.garbage_collect_dust();
+        if gc_unpaid_loss > 0 {
+            self.apply_adl(gc_unpaid_loss)?;
         }
 
         // Update last crank slot
@@ -2649,6 +2664,11 @@ impl RiskEngine {
 
     /// Deposit funds to account
     pub fn deposit(&mut self, idx: u16, amount: u128) -> Result<()> {
+        // Reject operations on insurance account (slot 0)
+        if idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
+
         // Deposits reduce risk (allowed in risk mode)
         self.enforce_op(OpClass::RiskReduce)?;
 
@@ -2674,6 +2694,11 @@ impl RiskEngine {
         now_slot: u64,
         oracle_price: u64,
     ) -> Result<()> {
+        // Reject operations on insurance account (slot 0)
+        if idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
+
         // Validate oracle price bounds (prevents overflow in mark_pnl calculations)
         if oracle_price == 0 || oracle_price > MAX_ORACLE_PRICE {
             return Err(RiskError::Overflow);
@@ -2903,6 +2928,11 @@ impl RiskEngine {
         oracle_price: u64,
         size: i128,
     ) -> Result<()> {
+        // Reject operations on insurance account (slot 0)
+        if lp_idx == 0 || user_idx == 0 {
+            return Err(RiskError::Unauthorized);
+        }
+
         // Require fresh crank (time-based) before state-changing operations
         self.require_fresh_crank(now_slot)?;
 
@@ -3355,12 +3385,13 @@ impl RiskEngine {
     }
 
     /// Returns remaining warmup budget for converting positive PnL to capital
-    /// Budget = max(0, warmed_neg_total + unreserved_spendable_insurance - warmed_pos_total)
+    /// Budget = max(0, warmed_neg_total + raw_spendable_insurance - warmed_pos_total)
+    /// Uses raw surplus (not unreserved) - reserved is a constraint check, not an input to budget.
     #[inline]
     pub fn warmup_budget_remaining(&self) -> u128 {
         let rhs = self
             .warmed_neg_total
-            .saturating_add(self.insurance_spendable_unreserved());
+            .saturating_add(self.insurance_spendable_raw());
         rhs.saturating_sub(self.warmed_pos_total)
     }
 
@@ -3618,11 +3649,15 @@ impl RiskEngine {
             loss_to_socialize
         );
 
+        // Haircuts reduce claims (net_pnl) to cover the loss. No insurance credit needed.
+        // Conservation: actual stays same, expected decreases by haircut amount (slack grows).
+
         // Handle remaining loss with insurance fund (respecting floor)
-        let remaining_loss = total_loss.saturating_sub(applied_from_pnl);
+        // remaining_loss = total_loss - loss_to_socialize (what couldn't be haircutted)
+        let remaining_loss = total_loss.saturating_sub(loss_to_socialize);
 
         if remaining_loss > 0 {
-            // Insurance can only spend unreserved amount above the floor
+            // Insurance can only spend unreserved amount (above floor, minus warmup reserved)
             let spendable = self.insurance_spendable_unreserved();
             let spend = core::cmp::min(remaining_loss, spendable);
 
@@ -3642,7 +3677,6 @@ impl RiskEngine {
             }
         }
 
-
         Ok(())
     }
 
@@ -3656,16 +3690,13 @@ impl RiskEngine {
             return Ok(());
         }
 
-        // Inline helper - check adl_exclude_scratch
-        #[inline]
-        fn is_excluded_by_scratch(scratch: &[u8; MAX_ACCOUNTS], idx: usize) -> bool {
-            scratch[idx] != 0
-        }
+        // Capture current epoch for exclusion checks
+        let current_epoch = self.adl_epoch;
 
         // Hoist effective_slot once
         let effective_slot = self.effective_warmup_slot();
 
-        // Pass 1: Compute total unwrapped PNL (excluding accounts marked in scratch)
+        // Pass 1: Compute total unwrapped PNL (excluding accounts marked in current epoch)
         let mut total_unwrapped = 0u128;
 
         for block in 0..BITMAP_WORDS {
@@ -3677,7 +3708,7 @@ impl RiskEngine {
                 if idx >= MAX_ACCOUNTS {
                     continue;
                 }
-                if is_excluded_by_scratch(&self.adl_exclude_scratch, idx) {
+                if self.adl_exclude_epoch[idx] == current_epoch {
                     continue;
                 }
 
@@ -3706,7 +3737,7 @@ impl RiskEngine {
                     if idx >= MAX_ACCOUNTS {
                         continue;
                     }
-                    if is_excluded_by_scratch(&self.adl_exclude_scratch, idx) {
+                    if self.adl_exclude_epoch[idx] == current_epoch {
                         continue;
                     }
 
@@ -3766,11 +3797,15 @@ impl RiskEngine {
             loss_to_socialize
         );
 
+        // Haircuts reduce claims (net_pnl) to cover the loss. No insurance credit needed.
+        // Conservation: actual stays same, expected decreases by haircut amount (slack grows).
+
         // Handle remaining loss with insurance fund (respecting floor)
-        let remaining_loss = total_loss.saturating_sub(applied_from_pnl);
+        // remaining_loss = total_loss - loss_to_socialize (what couldn't be haircutted)
+        let remaining_loss = total_loss.saturating_sub(loss_to_socialize);
 
         if remaining_loss > 0 {
-            // Insurance can only spend unreserved amount above the floor
+            // Insurance can only spend unreserved amount (above floor, minus warmup reserved)
             let spendable = self.insurance_spendable_unreserved();
             let spend = core::cmp::min(remaining_loss, spendable);
 
@@ -3789,7 +3824,6 @@ impl RiskEngine {
                 self.enter_risk_reduction_only_mode();
             }
         }
-
 
         Ok(())
     }

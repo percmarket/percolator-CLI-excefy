@@ -64,7 +64,7 @@ fn test_e2e_complete_user_journey() {
     let mut engine = Box::new(RiskEngine::new(default_params()));
 
     // Initialize insurance fund
-    engine.insurance_fund.balance = 50_000;
+    engine.accounts[0].capital = 50_000;
 
     // Add LP with capital (LP takes leveraged position opposite to users)
     let lp = engine.add_lp([1u8; 32], [2u8; 32], 10_000).unwrap();
@@ -232,7 +232,7 @@ fn test_e2e_multi_user_with_adl() {
     // Scenario: Multiple users trade, one causes loss requiring ADL
 
     let mut engine = Box::new(RiskEngine::new(default_params()));
-    engine.insurance_fund.balance = 10_000;
+    engine.accounts[0].capital = 10_000;
 
     let lp = engine.add_lp([1u8; 32], [2u8; 32], 10_000).unwrap();
     engine.accounts[lp as usize].capital = 200_000;
@@ -313,7 +313,7 @@ fn test_e2e_warmup_rate_limiting_stress() {
     let mut engine = Box::new(RiskEngine::new(default_params()));
 
     // Small insurance fund to test capacity limits
-    engine.insurance_fund.balance = 20_000;
+    engine.accounts[0].capital = 20_000;
 
     let lp = engine.add_lp([1u8; 32], [2u8; 32], 10_000).unwrap();
     engine.accounts[lp as usize].capital = 500_000;
@@ -353,10 +353,10 @@ fn test_e2e_warmup_rate_limiting_stress() {
     // Verify warmup rate limiting is enforced
     // Max warmup rate = insurance_fund * 0.5 / (T/2)
     // Note: Insurance fund may have increased from fees, so max_rate may be slightly higher
-    let max_rate = engine.insurance_fund.balance * 5000 / 50 / 10_000;
+    let max_rate = engine.accounts[0].capital * 5000 / 50 / 10_000;
     assert!(max_rate >= 200, "Max rate should be at least 200");
 
-    println!("Insurance fund balance: {}", engine.insurance_fund.balance);
+    println!("Insurance fund balance: {}", engine.accounts[0].capital);
     println!("Calculated max warmup rate: {}", max_rate);
     println!("Actual total warmup rate: {}", engine.total_warmup_rate);
 
@@ -411,7 +411,7 @@ fn test_e2e_funding_complete_cycle() {
     // Scenario: Users trade, funding accrues over time, positions flip, funding reverses
 
     let mut engine = Box::new(RiskEngine::new(default_params()));
-    engine.insurance_fund.balance = 50_000;
+    engine.accounts[0].capital = 50_000;
 
     let lp = engine.add_lp([1u8; 32], [2u8; 32], 10_000).unwrap();
     engine.accounts[lp as usize].capital = 100_000;
@@ -505,7 +505,7 @@ fn test_e2e_oracle_attack_protection() {
     // Scenario: Attacker tries to exploit oracle manipulation but gets limited by warmup + ADL
 
     let mut engine = Box::new(RiskEngine::new(default_params()));
-    engine.insurance_fund.balance = 30_000;
+    engine.accounts[0].capital = 30_000;
 
     let lp = engine.add_lp([1u8; 32], [2u8; 32], 10_000).unwrap();
     engine.accounts[lp as usize].capital = 200_000;
@@ -545,10 +545,10 @@ fn test_e2e_oracle_attack_protection() {
 
     // Due to warmup rate limiting, attacker's PNL warms up slowly
     // Max warmup rate = insurance_fund * 0.5 / (T/2)
-    let expected_max_rate = engine.insurance_fund.balance * 5000 / 50 / 10_000;
+    let expected_max_rate = engine.accounts[0].capital * 5000 / 50 / 10_000;
 
     println!("Attacker fake PNL: {}", attacker_fake_pnl);
-    println!("Insurance fund: {}", engine.insurance_fund.balance);
+    println!("Insurance fund: {}", engine.accounts[0].capital);
     println!("Expected max warmup rate: {}", expected_max_rate);
     println!("Actual warmup rate: {}", engine.total_warmup_rate);
     println!("Attacker slope: {}", engine.accounts[attacker as usize].warmup_slope_per_step);
@@ -594,7 +594,7 @@ fn test_e2e_oracle_attack_protection() {
     assert_eq!(engine.accounts[honest_user as usize].capital, 20_000, "I1: Principal never reduced");
 
     // Insurance fund took some hit, but limited
-    assert!(engine.insurance_fund.balance >= 20_000,
+    assert!(engine.accounts[0].capital >= 20_000,
             "Insurance fund protected by warmup rate limiting");
 
     println!("✅ E2E test passed: Oracle manipulation attack protection works correctly");
