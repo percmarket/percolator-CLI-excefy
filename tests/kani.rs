@@ -2835,15 +2835,16 @@ fn proof_close_account_requires_flat_and_paid() {
 
     let result = engine.close_account(user, 0, 1_000_000);
 
-    if has_position || owes_fees || has_pos_pnl {
+    if has_position || has_pos_pnl {
         assert!(
             result.is_err(),
-            "close_account must fail if position != 0 OR fee_credits < 0 OR pnl > 0"
+            "close_account must fail if position != 0 OR pnl > 0"
         );
     } else {
+        // Fee debt is forgiven on close (Finding C fix), so owes_fees doesn't block
         assert!(
             result.is_ok(),
-            "close_account should succeed when flat/paid and pnl==0"
+            "close_account should succeed when flat and pnl==0 (fee debt forgiven)"
         );
     }
 }
