@@ -4210,3 +4210,87 @@ fn test_zero_fee_bps_means_no_fee() {
         fee_charged
     );
 }
+
+/// Regression test for Review Finding [1]: warmup cap overwithdrawing
+/// When mark settlement increases PnL, warmup must restart per spec §5.4.
+/// Without the fix, stale slope * elapsed could exceed original PnL entitlement.
+#[test]
+fn test_warmup_resets_when_mark_increases_pnl() {
+    let mut params = default_params();
+    params.warmup_period_slots = 100;
+    params.trading_fee_bps = 0;
+    params.maintenance_margin_bps = 100;
+    params.initial_margin_bps = 100;
+    params.max_crank_staleness_slots = u64::MAX;
+
+    let mut engine = Box::new(RiskEngine::new(params));
+
+    let user_idx = engine.add_user(0).unwrap();
+    let lp_idx = engine.add_lp([1u8; 32], [2u8; 32], 0).unwrap();
+
+    // Setup: user has 1B capital, LP has 1B capital
+    engine.deposit(user_idx, 1_000_000_000, 0).unwrap();
+    engine.accounts[lp_idx as usize].capital = U128::new(1_000_000_000);
+    engine.vault += 1_000_000_000;
+    engine.c_tot = U128::new(2_000_000_000);
+
+    let oracle_price = 100_000_000u64; // $100
+
+    // T=0: User opens a long position
+    let size: i128 = 10_000_000; // 10 units
+    engine.execute_trade(&MATCHER, lp_idx, user_idx, 0, oracle_price, size).unwrap();
+
+    // At this point, PnL is 0 (exec_price = oracle_price with NoOpMatcher)
+    // User has position with entry_price = oracle_price
+
+    // Manually give user some positive PnL to simulate prior profit
+    engine.set_pnl(user_idx as usize, 100_000_000); // 100M PnL
+    engine.pnl_pos_tot = U128::new(100_000_000);
+
+    // Set warmup slope for the initial PnL (slope = 100M / 100 = 1M per slot)
+    engine.update_warmup_slope(user_idx).unwrap();
+
+    let warmup_started_t0 = engine.accounts[user_idx as usize].warmup_started_at_slot;
+    assert_eq!(warmup_started_t0, 0, "Warmup should start at slot 0");
+
+    // T=200: Long idle period. Price moved in user's favor (+50%)
+    // Mark PnL = (new_price - entry) * position = (150 - 100) * 10 = 500M
+    let new_oracle_price = 150_000_000u64; // $150
+
+    // Without the fix:
+    // - cap = slope * 200 = 1M * 200 = 200M
+    // - Mark settlement adds 500M profit to PnL → total PnL = 600M
+    // - avail_gross = 600M, cap = 200M, x = min(600M, 200M) = 200M converted!
+    // - But original entitlement was only 100M (the initial PnL)
+    //
+    // With the fix:
+    // - Mark settlement increases PnL from 100M to 600M
+    // - Warmup slope is updated, warmup_started_at = 200
+    // - cap = new_slope * 0 = 0 (nothing warmable yet from the new total)
+
+    // Touch account (triggers mark settlement + warmup slope update if PnL increased)
+    engine.touch_account_full(user_idx, 200, new_oracle_price).unwrap();
+
+    // Check warmup was restarted (started_at should be updated to >= 200)
+    let warmup_started_after = engine.accounts[user_idx as usize].warmup_started_at_slot;
+    assert!(
+        warmup_started_after >= 200,
+        "Warmup must restart when mark settlement increases PnL. Started at {} should be >= 200",
+        warmup_started_after
+    );
+
+    // With the fix, capital should be close to original 1B
+    // (possibly with some conversion from the original 100M that was warming up)
+    // But NOT the huge 200M that the bug would have allowed
+    let user_capital_after = engine.accounts[user_idx as usize].capital.get();
+
+    // The original 100M PnL had 200 slots to warm up at slope 1M/slot = 200M cap
+    // But since only 100M existed, max conversion = 100M (fully warmed)
+    // After mark adds 500M more, warmup restarts → new 500M gets 0 conversion
+    // So capital should be around 1B + 100M = 1.1B (at most)
+    assert!(
+        user_capital_after <= 1_150_000_000, // Allow some margin for rounding
+        "User should not instantly convert huge mark profit. Capital {} too high (expected ~1.1B)",
+        user_capital_after
+    );
+}

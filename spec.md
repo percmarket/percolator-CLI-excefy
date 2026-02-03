@@ -1,6 +1,6 @@
-# Risk Engine Spec (Source of Truth) — v6 (Fee-Debt-as-Liability + Crank Warmup + Initial Margin + Funding Anti-Retroactivity + Position Flip + Fee Ceiling)
+# Risk Engine Spec (Source of Truth) — v7 (Fee-Debt-as-Liability + Crank Warmup + Initial Margin + Funding Anti-Retroactivity + Position Flip + Fee Ceiling + Warmup Restart on Mark)
 **Design:** **Protected Principal + Junior Profit Claims with Global Haircut Ratio**  
-**Status:** Implementation source-of-truth (normative language: MUST / MUST NOT / SHOULD / MAY)   (updated: fee debt is margin liability; crank advances warmup; risk-increasing trades use initial margin; funding accrual is anti-retroactive; position sign-flips require initial margin; trade fees use ceiling division)
+**Status:** Implementation source-of-truth (normative language: MUST / MUST NOT / SHOULD / MAY)   (updated: fee debt is margin liability; crank advances warmup; risk-increasing trades use initial margin; funding accrual is anti-retroactive; position sign-flips require initial margin; trade fees use ceiling division; warmup restarts on mark-to-market PnL increase)
 **Scope:** Perpetual DEX risk engine for a single quote-token vault (e.g., Solana program-owned vault).  
 
 **Goal:** Achieve the same safety goals as the prior design (oracle manipulation resistance within a warmup window, principal protection, bounded insolvency handling, conservation, and liveness) with **no global ADL scans** and **no “recover stranded” function**, while preventing “PnL zombie” accounts from indefinitely poisoning the global haircut ratio.
@@ -186,6 +186,9 @@ After any change that increases `AvailGross_i` (e.g., new profits), and after an
 - Else if `T > 0`: `w_slope_i = max(1, floor(AvailGross_i / T))`
 - Else (`T == 0`): `w_slope_i = AvailGross_i`
 - Set `w_start_i = current_slot` (unless warmup is explicitly paused by policy; pausing is optional and not required for correctness of this spec).
+
+**Implementation ordering requirement (MUST):**
+When mark-to-market settlement increases `AvailGross_i` (positive mark PnL added to realized PnL), the engine MUST update the warmup slope **before** invoking profit conversion (`settle_warmup_to_capital`). Otherwise, a stale `cap = w_slope * elapsed` could exceed the originally warming entitlement, allowing overwithdrawal of newly-realized mark profits.
 
 ---
 

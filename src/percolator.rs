@@ -2314,11 +2314,36 @@ impl RiskEngine {
     /// This is the standard "lazy settlement" path called on every user operation.
     /// Triggers liquidation check if fees push account below maintenance margin.
     pub fn touch_account_full(&mut self, idx: u16, now_slot: u64, oracle_price: u64) -> Result<()> {
+        // Update current_slot for consistent warmup/bookkeeping
+        self.current_slot = now_slot;
+
         // 1. Settle funding
         self.touch_account(idx)?;
 
         // 2. Settle mark-to-market (variation margin)
+        // Per spec §5.4: if AvailGross increases, warmup must restart.
+        // Capture old AvailGross before mark settlement.
+        let old_avail_gross = {
+            let pnl = self.accounts[idx as usize].pnl.get();
+            if pnl > 0 {
+                (pnl as u128).saturating_sub(self.accounts[idx as usize].reserved_pnl as u128)
+            } else {
+                0
+            }
+        };
         self.settle_mark_to_oracle(idx, oracle_price)?;
+        // If AvailGross increased, update warmup slope (restarts warmup timer)
+        let new_avail_gross = {
+            let pnl = self.accounts[idx as usize].pnl.get();
+            if pnl > 0 {
+                (pnl as u128).saturating_sub(self.accounts[idx as usize].reserved_pnl as u128)
+            } else {
+                0
+            }
+        };
+        if new_avail_gross > old_avail_gross {
+            self.update_warmup_slope(idx)?;
+        }
 
         // 3. Settle maintenance fees (may trigger undercollateralized error)
         self.settle_maintenance_fee(idx, now_slot, oracle_price)?;
@@ -2759,8 +2784,35 @@ impl RiskEngine {
         // Note: warmup is settled at the END after trade PnL is generated
         self.touch_account(user_idx)?;
         self.touch_account(lp_idx)?;
+
+        // Per spec §5.4: if AvailGross increases from mark settlement, warmup must restart.
+        // Capture old AvailGross before mark settlement for both accounts.
+        let user_old_avail = {
+            let pnl = self.accounts[user_idx as usize].pnl.get();
+            if pnl > 0 { (pnl as u128).saturating_sub(self.accounts[user_idx as usize].reserved_pnl as u128) } else { 0 }
+        };
+        let lp_old_avail = {
+            let pnl = self.accounts[lp_idx as usize].pnl.get();
+            if pnl > 0 { (pnl as u128).saturating_sub(self.accounts[lp_idx as usize].reserved_pnl as u128) } else { 0 }
+        };
         self.settle_mark_to_oracle(user_idx, oracle_price)?;
         self.settle_mark_to_oracle(lp_idx, oracle_price)?;
+        // If AvailGross increased from mark settlement, update warmup slope (restarts warmup)
+        let user_new_avail = {
+            let pnl = self.accounts[user_idx as usize].pnl.get();
+            if pnl > 0 { (pnl as u128).saturating_sub(self.accounts[user_idx as usize].reserved_pnl as u128) } else { 0 }
+        };
+        let lp_new_avail = {
+            let pnl = self.accounts[lp_idx as usize].pnl.get();
+            if pnl > 0 { (pnl as u128).saturating_sub(self.accounts[lp_idx as usize].reserved_pnl as u128) } else { 0 }
+        };
+        if user_new_avail > user_old_avail {
+            self.update_warmup_slope(user_idx)?;
+        }
+        if lp_new_avail > lp_old_avail {
+            self.update_warmup_slope(lp_idx)?;
+        }
+
         self.settle_maintenance_fee(user_idx, now_slot, oracle_price)?;
         self.settle_maintenance_fee(lp_idx, now_slot, oracle_price)?;
 
