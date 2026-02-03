@@ -1,4 +1,4 @@
-# Risk Engine Spec (Source of Truth) — v2 (Fee-Debt-as-Liability + Crank Warmup Progress)
+# Risk Engine Spec (Source of Truth) — v3 (IM for Risk-Increasing Trades)
 **Design:** **Protected Principal + Junior Profit Claims with Global Haircut Ratio**  
 **Status:** Implementation source-of-truth (normative language: MUST / MUST NOT / SHOULD / MAY)  
 **Scope:** Perpetual DEX risk engine for a single quote-token vault (e.g., Solana program-owned vault).  
@@ -366,7 +366,11 @@ Procedure:
 4. Compute trade PnL (zero-sum before fees) and apply using `set_pnl`.
 5. Charge explicit trading fees to insurance (§8.1).
 6. Update warmup slopes for any account whose positive PnL increased (§5.4).
-7. Enforce post-trade maintenance margin using `Eq_mtm_net` at oracle.
+7. Enforce post-trade margin using `Eq_mtm_net` at oracle:
+   - **Always:** `Eq_mtm_net > MM_req` (maintenance margin).
+   - **If risk-increasing:** `Eq_mtm_net ≥ IM_req` (initial margin).
+   A trade is risk-increasing for account `i` when `|new_pos_i| > |old_pos_i|`.
+   This prevents opening positions at the liquidation boundary.
 8. Perform fee-debt sweep (§6.3) if any principal was created during settlement/conversion.
 
 ### 10.5 `keeper_crank(...)` (optional but strongly recommended)
@@ -413,6 +417,7 @@ An implementation MUST include tests that cover:
    - `h` recovers accordingly (no indefinite collapse),
    - fee debt reduces `Eq_mtm_net` and can make abandoned positions liquidatable.
 7. **Fee debt sweep:** ensure that if crank/user ops create principal via conversion, fee debt is paid down immediately (no fee bypass).
+8. **IM for risk-increasing trades:** confirm that opening a new position or increasing `|pos|` requires initial margin, while risk-reducing trades only require maintenance margin. Specifically, a trade that would leave `Eq_mtm_net` between MM and IM must be rejected if risk-increasing but allowed if risk-reducing.
 
 ---
 
