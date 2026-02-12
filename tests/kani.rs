@@ -7353,3 +7353,223 @@ fn proof_set_capital_aggregate_correct() {
         );
     }
 }
+
+// ============================================================================
+// MULTI-STEP CONSERVATION: Realistic lifecycle with all settlement paths
+// ============================================================================
+//
+// These proofs build realistic state through actual trades (user + LP),
+// oracle movement, funding accrual, and then exercise the operations that
+// were previously only tested in isolation with manually constructed state.
+//
+// The key insight: conservation bugs arise from INTERACTIONS between
+// operations, not individual operations on artificial state.
+
+/// Full lifecycle: deposit → trade → oracle move → accrue_funding →
+/// touch_account_full (funding + mark + fees + warmup + debt sweep) →
+/// verify conservation.
+///
+/// This exercises the most complex settlement path with state built
+/// through real operations, not manual field writes.
+#[kani::proof]
+#[kani::unwind(5)] // MAX_ACCOUNTS=4
+#[kani::solver(cadical)]
+fn proof_lifecycle_trade_then_touch_full_conservation() {
+    let mut engine = RiskEngine::new(test_params_with_maintenance_fee());
+    engine.vault = U128::new(100_000);
+    engine.insurance_fund.balance = U128::new(10_000);
+    engine.current_slot = 0;
+    engine.last_crank_slot = 0;
+    engine.last_full_sweep_start_slot = 0;
+
+    let user = engine.add_user(0).unwrap();
+    let lp = engine.add_lp([1u8; 32], [0u8; 32], 0).unwrap();
+
+    // Step 1: Deposits (concrete — keeps proof tractable)
+    assert_ok!(engine.deposit(user, 50_000, 0), "user deposit");
+    assert_ok!(engine.deposit(lp, 200_000, 0), "LP deposit");
+    kani::assert(canonical_inv(&engine), "INV after deposits");
+
+    // Step 2: Open trade at oracle $1.00
+    let size: i128 = 100;
+    let trade1 = engine.execute_trade(&NoOpMatcher, lp, user, 10, 1_000_000, size);
+    assert_ok!(trade1, "open trade must succeed");
+    kani::assert(canonical_inv(&engine), "INV after open trade");
+
+    // Step 3: Oracle moves (symbolic — this is where PnL diverges from entry)
+    let oracle_2: u64 = kani::any();
+    kani::assume(oracle_2 >= 800_000 && oracle_2 <= 1_200_000); // $0.80 - $1.20
+
+    // Step 4: Accrue funding with symbolic rate
+    let funding_rate: i64 = kani::any();
+    kani::assume(funding_rate > -50 && funding_rate < 50);
+    engine.set_funding_rate_for_next_interval(funding_rate);
+
+    let accrue_result = engine.accrue_funding(100, oracle_2);
+    if accrue_result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV after accrue_funding");
+    }
+
+    // Step 5: touch_account_full on the user — settles funding, mark,
+    // maintenance fees, warmup, and fee debt sweep.
+    // This is the CRITICAL path: state was built by real trades + oracle move.
+    let touch_result = engine.touch_account_full(user, 100, oracle_2);
+    if touch_result.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after touch_account_full on traded account",
+        );
+        kani::assert(
+            conservation_fast_no_funding(&engine),
+            "Conservation must hold after touch_account_full",
+        );
+    }
+
+    // Step 6: touch_account_full on the LP too
+    let touch_lp = engine.touch_account_full(lp, 100, oracle_2);
+    if touch_lp.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after touch_account_full on LP",
+        );
+    }
+}
+
+/// Lifecycle: deposit → trade → oracle crash → crank (liquidation) →
+/// settle_loss_only → verify conservation.
+///
+/// Tests the loss settlement path with PnL created through real trades,
+/// where the oracle crashes enough to make the user underwater.
+#[kani::proof]
+#[kani::unwind(5)] // MAX_ACCOUNTS=4
+#[kani::solver(cadical)]
+fn proof_lifecycle_trade_crash_settle_loss_conservation() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+    engine.insurance_fund.balance = U128::new(10_000);
+    engine.current_slot = 0;
+    engine.last_crank_slot = 0;
+    engine.last_full_sweep_start_slot = 0;
+
+    let user = engine.add_user(0).unwrap();
+    let lp = engine.add_lp([1u8; 32], [0u8; 32], 0).unwrap();
+
+    // Step 1: Deposits
+    assert_ok!(engine.deposit(user, 10_000, 0), "user deposit");
+    assert_ok!(engine.deposit(lp, 200_000, 0), "LP deposit");
+    kani::assert(canonical_inv(&engine), "INV after deposits");
+
+    // Step 2: User goes long at $1.00
+    let trade = engine.execute_trade(&NoOpMatcher, lp, user, 10, 1_000_000, 100);
+    assert_ok!(trade, "open trade must succeed");
+    kani::assert(canonical_inv(&engine), "INV after trade");
+
+    // Step 3: Oracle crashes (symbolic, but below entry → user loses)
+    let oracle_crash: u64 = kani::any();
+    kani::assume(oracle_crash >= 500_000 && oracle_crash <= 999_999); // $0.50 - $0.999
+
+    // Step 4: Crank at crashed oracle — may liquidate user
+    let crank = engine.keeper_crank(user, 50, oracle_crash, 0, false);
+    if crank.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV after crank at crashed oracle");
+    }
+
+    // Step 5: Settle mark to realize the loss
+    let mark = engine.settle_mark_to_oracle(user, oracle_crash);
+    if mark.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV after settle_mark with loss");
+    }
+
+    // Step 6: Settle losses — the key operation
+    let loss = engine.settle_loss_only(user);
+    if loss.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after settle_loss_only on real traded account",
+        );
+        kani::assert(
+            conservation_fast_no_funding(&engine),
+            "Conservation must hold after settle_loss_only",
+        );
+    }
+}
+
+/// Lifecycle: deposit → trade → oracle move → crank → time passes →
+/// settle_warmup_to_capital → withdraw → top_up_insurance → verify.
+///
+/// Tests the warmup conversion + withdrawal + insurance top-up path
+/// with state built through real trades.
+#[kani::proof]
+#[kani::unwind(5)] // MAX_ACCOUNTS=4
+#[kani::solver(cadical)]
+fn proof_lifecycle_trade_warmup_withdraw_topup_conservation() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+    engine.insurance_fund.balance = U128::new(10_000);
+    engine.current_slot = 0;
+    engine.last_crank_slot = 0;
+    engine.last_full_sweep_start_slot = 0;
+
+    let user = engine.add_user(0).unwrap();
+    let lp = engine.add_lp([1u8; 32], [0u8; 32], 0).unwrap();
+
+    // Step 1: Deposits
+    assert_ok!(engine.deposit(user, 50_000, 0), "user deposit");
+    assert_ok!(engine.deposit(lp, 200_000, 0), "LP deposit");
+
+    // Step 2: User goes long at $1.00
+    let trade = engine.execute_trade(&NoOpMatcher, lp, user, 10, 1_000_000, 100);
+    assert_ok!(trade, "open trade");
+    kani::assert(canonical_inv(&engine), "INV after trade");
+
+    // Step 3: Oracle moves up (user profits)
+    let oracle_2: u64 = kani::any();
+    kani::assume(oracle_2 >= 1_000_001 && oracle_2 <= 1_200_000); // $1.00 - $1.20
+
+    // Step 4: Crank at new oracle
+    let crank = engine.keeper_crank(user, 50, oracle_2, 0, false);
+    kani::assume(crank.is_ok());
+    kani::assert(canonical_inv(&engine), "INV after crank");
+
+    // Step 5: Close position to lock in profit
+    let close = engine.execute_trade(&NoOpMatcher, lp, user, 50, oracle_2, -100);
+    kani::assume(close.is_ok());
+    kani::assert(canonical_inv(&engine), "INV after close");
+
+    // Step 6: Time passes for warmup (slot 50 → 200, warmup_period=100)
+    engine.current_slot = 200;
+    engine.last_crank_slot = 200;
+    engine.last_full_sweep_start_slot = 200;
+
+    // Step 7: Settle warmup — converts warmed PnL to capital with haircut
+    let settle = engine.settle_warmup_to_capital(user);
+    if settle.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after settle_warmup on real profit",
+        );
+    }
+
+    // Step 8: Withdraw some capital
+    let withdraw_amt: u128 = kani::any();
+    kani::assume(withdraw_amt > 0 && withdraw_amt < 10_000);
+    let w = engine.withdraw(user, withdraw_amt, 200, oracle_2);
+    if w.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV after withdraw");
+    }
+
+    // Step 9: Top up insurance
+    let topup_amt: u128 = kani::any();
+    kani::assume(topup_amt > 0 && topup_amt < 50_000);
+    let t = engine.top_up_insurance_fund(topup_amt);
+    if t.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after top_up_insurance on traded state",
+        );
+        kani::assert(
+            conservation_fast_no_funding(&engine),
+            "Conservation must hold at end of full lifecycle",
+        );
+    }
+}
