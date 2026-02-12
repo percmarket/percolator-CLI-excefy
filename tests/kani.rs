@@ -4455,8 +4455,48 @@ fn proof_close_account_preserves_inv() {
 }
 
 // ============================================================================
-// TODO: TOP_UP_INSURANCE_FUND PROOF FAMILY - Exception Safety + INV Preservation (not yet implemented)
+// TOP_UP_INSURANCE_FUND PROOF FAMILY - INV Preservation
 // ============================================================================
+
+/// top_up_insurance_fund: INV preserved.
+/// Adds `amount` to both vault and insurance_fund.balance.
+/// vault and insurance grow by the same amount, so vault - c_tot - insurance is unchanged.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_top_up_insurance_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(10_000);
+    engine.recompute_aggregates();
+
+    kani::assume(canonical_inv(&engine));
+
+    let amount: u128 = kani::any();
+    kani::assume(amount > 0 && amount < 1_000_000);
+
+    let vault_before = engine.vault.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let result = engine.top_up_insurance_fund(amount);
+
+    if result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV must hold after top_up_insurance_fund");
+        kani::assert(
+            engine.vault.get() == vault_before + amount,
+            "vault must increase by amount",
+        );
+        kani::assert(
+            engine.insurance_fund.balance.get() == ins_before + amount,
+            "insurance must increase by amount",
+        );
+    }
+
+    // Non-vacuity: force Ok path
+    let _ = assert_ok!(result, "top_up_insurance_fund must succeed");
+}
 
 // ============================================================================
 // SEQUENCE-LEVEL PROOFS - Multi-Operation INV Preservation
@@ -6879,4 +6919,435 @@ fn proof_NEGATIVE_bypass_set_pnl_breaks_invariant() {
         inv_aggregates(&engine),
         "EXPECTED TO FAIL: bypassing set_pnl breaks pnl_pos_tot invariant"
     );
+}
+
+// ============================================================================
+// MISSING CONSERVATION PROOFS - Operations that lacked vault >= c_tot + insurance verification
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// settle_mark_to_oracle: Ok path conservation
+// Only modifies per-account pnl and entry_price. vault/c_tot/insurance untouched.
+// ----------------------------------------------------------------------------
+
+/// settle_mark_to_oracle: INV preserved on Ok path.
+/// Mark settlement only modifies account PnL and entry_price;
+/// vault, c_tot, and insurance are all untouched.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_settle_mark_to_oracle_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(10_000);
+
+    // Open a position so mark settlement does real work
+    let pos: i128 = kani::any();
+    kani::assume(pos >= -1_000 && pos <= 1_000 && pos != 0);
+    engine.accounts[user_idx as usize].position_size = I128::new(pos);
+    engine.accounts[user_idx as usize].entry_price = 1_000_000; // $1.00
+    engine.accounts[user_idx as usize].funding_index = engine.funding_index_qpb_e6;
+
+    sync_engine_aggregates(&mut engine);
+    kani::assume(canonical_inv(&engine));
+
+    let oracle: u64 = kani::any();
+    kani::assume(oracle >= 500_000 && oracle <= 2_000_000); // $0.50 - $2.00
+
+    let vault_before = engine.vault.get();
+    let c_tot_before = engine.c_tot.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let result = engine.settle_mark_to_oracle(user_idx, oracle);
+
+    if result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV must hold after settle_mark_to_oracle");
+        // vault, c_tot, insurance must all be unchanged
+        kani::assert(engine.vault.get() == vault_before, "vault unchanged by mark settlement");
+        kani::assert(engine.c_tot.get() == c_tot_before, "c_tot unchanged by mark settlement");
+        kani::assert(
+            engine.insurance_fund.balance.get() == ins_before,
+            "insurance unchanged by mark settlement",
+        );
+    }
+
+    // Non-vacuity: force Ok path
+    let _ = assert_ok!(result, "settle_mark_to_oracle must succeed with small position");
+}
+
+// ----------------------------------------------------------------------------
+// touch_account: Ok path conservation
+// Settles funding — only modifies account PnL and funding_index.
+// vault/c_tot/insurance untouched.
+// ----------------------------------------------------------------------------
+
+/// touch_account: INV preserved on Ok path.
+/// Funding settlement redistributes PnL between accounts (zero-sum);
+/// vault, c_tot, and insurance are all untouched.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_touch_account_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(200_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(10_000);
+
+    // Position with stale funding index so touch does work
+    let pos: i128 = kani::any();
+    kani::assume(pos >= -500 && pos <= 500 && pos != 0);
+    engine.accounts[user_idx as usize].position_size = I128::new(pos);
+    engine.accounts[user_idx as usize].entry_price = 1_000_000;
+
+    // Advance the global funding index so there's a delta to settle
+    let funding_delta: i128 = kani::any();
+    kani::assume(funding_delta >= -100_000 && funding_delta <= 100_000);
+    engine.funding_index_qpb_e6 = I128::new(funding_delta);
+    // Account's index is 0 (default), so delta = funding_delta
+
+    sync_engine_aggregates(&mut engine);
+    kani::assume(canonical_inv(&engine));
+
+    let vault_before = engine.vault.get();
+    let c_tot_before = engine.c_tot.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let result = engine.touch_account(user_idx);
+
+    if result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV must hold after touch_account");
+        kani::assert(engine.vault.get() == vault_before, "vault unchanged by touch");
+        kani::assert(engine.c_tot.get() == c_tot_before, "c_tot unchanged by touch");
+        kani::assert(
+            engine.insurance_fund.balance.get() == ins_before,
+            "insurance unchanged by touch",
+        );
+    }
+
+    // Non-vacuity: force Ok path
+    let _ = assert_ok!(result, "touch_account must succeed");
+}
+
+// ----------------------------------------------------------------------------
+// touch_account_full: Ok path conservation
+// Composite: funding + mark + maintenance fee + warmup settle + fee debt sweep.
+// vault unchanged. c_tot may decrease (fees/losses), insurance may increase (fees).
+// ----------------------------------------------------------------------------
+
+/// touch_account_full: INV preserved on Ok path.
+/// This is the most complex settlement path — funding, mark, fees, warmup, debt sweep.
+/// Vault is never modified; fees transfer from c_tot to insurance (net zero on sum).
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_touch_account_full_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params_with_maintenance_fee());
+    engine.vault = U128::new(200_000);
+    engine.current_slot = 100;
+    engine.last_crank_slot = 100;
+    engine.last_full_sweep_start_slot = 100;
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(50_000);
+
+    // Position with some PnL and warmup state
+    let pos: i128 = kani::any();
+    kani::assume(pos >= -200 && pos <= 200 && pos != 0);
+    engine.accounts[user_idx as usize].position_size = I128::new(pos);
+    engine.accounts[user_idx as usize].entry_price = 1_000_000;
+    engine.accounts[user_idx as usize].funding_index = engine.funding_index_qpb_e6;
+    engine.accounts[user_idx as usize].last_fee_slot = 100;
+
+    // Some warmed PnL
+    engine.accounts[user_idx as usize].pnl = I128::new(1_000);
+    engine.accounts[user_idx as usize].warmup_started_at_slot = 0;
+    engine.accounts[user_idx as usize].warmup_slope_per_step = U128::new(50);
+
+    sync_engine_aggregates(&mut engine);
+    kani::assume(canonical_inv(&engine));
+
+    let now_slot: u64 = kani::any();
+    kani::assume(now_slot >= 101 && now_slot <= 300);
+
+    let oracle: u64 = kani::any();
+    kani::assume(oracle >= 900_000 && oracle <= 1_100_000);
+
+    let result = engine.touch_account_full(user_idx, now_slot, oracle);
+
+    // INV only matters on Ok path (Err → Solana tx rollback)
+    // touch_account_full can legitimately return Undercollateralized,
+    // but with 50k capital and tiny position (~200 notional), Ok is reachable.
+    if result.is_ok() {
+        kani::assert(
+            canonical_inv(&engine),
+            "INV must hold after touch_account_full",
+        );
+    }
+
+    // Non-vacuity: force Ok path (well-capitalized account with tiny position)
+    let _ = assert_ok!(result, "touch_account_full must succeed with well-capitalized account");
+}
+
+// ----------------------------------------------------------------------------
+// settle_loss_only: Ok path conservation
+// Reduces c_tot by loss amount, writes off remaining negative PnL.
+// vault and insurance untouched. Residual can only widen (more solvent).
+// ----------------------------------------------------------------------------
+
+/// settle_loss_only: INV preserved on Ok path.
+/// Loss settlement decreases c_tot (absorbs loss from capital) and may write off
+/// remaining negative PnL. Vault and insurance are untouched, so the conservation
+/// gap can only widen (residual increases).
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_settle_loss_only_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+
+    let capital: u128 = kani::any();
+    kani::assume(capital > 0 && capital < 50_000);
+    engine.accounts[user_idx as usize].capital = U128::new(capital);
+
+    let pnl: i128 = kani::any();
+    kani::assume(pnl >= -100_000 && pnl < 0); // Must be negative for settle_loss_only to act
+    engine.accounts[user_idx as usize].pnl = I128::new(pnl);
+
+    engine.recompute_aggregates();
+    kani::assume(canonical_inv(&engine));
+
+    let vault_before = engine.vault.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let result = engine.settle_loss_only(user_idx);
+
+    if result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV must hold after settle_loss_only");
+        // vault and insurance must be unchanged
+        kani::assert(engine.vault.get() == vault_before, "vault unchanged by settle_loss_only");
+        kani::assert(
+            engine.insurance_fund.balance.get() == ins_before,
+            "insurance unchanged by settle_loss_only",
+        );
+        // c_tot must not increase (loss absorption only decreases it)
+        kani::assert(
+            engine.c_tot.get() <= capital,
+            "c_tot must not increase from settle_loss_only",
+        );
+        // After settlement, pnl must be >= 0 (loss fully absorbed or written off)
+        kani::assert(
+            engine.accounts[user_idx as usize].pnl.get() >= 0,
+            "pnl must be non-negative after settle_loss_only",
+        );
+    }
+
+    // Non-vacuity: force Ok path
+    let _ = assert_ok!(result, "settle_loss_only must succeed");
+}
+
+// ----------------------------------------------------------------------------
+// accrue_funding: Conservation
+// Only modifies the global funding_index. No vault/c_tot/insurance changes.
+// ----------------------------------------------------------------------------
+
+/// accrue_funding: INV preserved.
+/// Only updates the global funding index and last_funding_slot.
+/// vault, c_tot, and insurance are all untouched.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_accrue_funding_preserves_inv() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+    engine.current_slot = 100;
+    engine.last_funding_slot = 50;
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(10_000);
+    engine.recompute_aggregates();
+
+    // Set a non-zero funding rate so the function does real work
+    let rate: i64 = kani::any();
+    kani::assume(rate >= -100 && rate <= 100);
+    engine.funding_rate_bps_per_slot_last = rate;
+
+    kani::assume(canonical_inv(&engine));
+
+    let now_slot: u64 = kani::any();
+    kani::assume(now_slot >= 101 && now_slot <= 200);
+
+    let oracle: u64 = kani::any();
+    kani::assume(oracle >= 500_000 && oracle <= 2_000_000);
+
+    let vault_before = engine.vault.get();
+    let c_tot_before = engine.c_tot.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let result = engine.accrue_funding(now_slot, oracle);
+
+    if result.is_ok() {
+        kani::assert(canonical_inv(&engine), "INV must hold after accrue_funding");
+        kani::assert(engine.vault.get() == vault_before, "vault unchanged by accrue_funding");
+        kani::assert(engine.c_tot.get() == c_tot_before, "c_tot unchanged by accrue_funding");
+        kani::assert(
+            engine.insurance_fund.balance.get() == ins_before,
+            "insurance unchanged by accrue_funding",
+        );
+    }
+
+    // Non-vacuity: force Ok path
+    let _ = assert_ok!(result, "accrue_funding must succeed with valid inputs");
+}
+
+// ----------------------------------------------------------------------------
+// init_in_place: Conservation on fresh state
+// All financial fields are zero (struct assumed zeroed). vault=c_tot=insurance=0.
+// 0 >= 0 + 0 trivially holds.
+// ----------------------------------------------------------------------------
+
+/// init_in_place: INV holds on freshly initialized engine.
+/// The struct is assumed zero-initialized before init_in_place.
+/// vault = c_tot = insurance = 0, so conservation trivially holds.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_init_in_place_satisfies_inv() {
+    let mut engine = RiskEngine::default();
+    engine.init_in_place(test_params());
+
+    kani::assert(canonical_inv(&engine), "INV must hold after init_in_place");
+    kani::assert(engine.vault.get() == 0, "vault must be zero after init");
+    kani::assert(engine.c_tot.get() == 0, "c_tot must be zero after init");
+    kani::assert(
+        engine.insurance_fund.balance.get() == 0,
+        "insurance must be zero after init",
+    );
+}
+
+// ----------------------------------------------------------------------------
+// set_pnl: Conservation (vault/c_tot/insurance untouched)
+// Only modifies account.pnl and pnl_pos_tot aggregate.
+// ----------------------------------------------------------------------------
+
+/// set_pnl: Conservation preserved.
+/// set_pnl only modifies account PnL and the pnl_pos_tot aggregate.
+/// vault, c_tot, and insurance are completely untouched.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_set_pnl_preserves_conservation() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+    engine.accounts[user_idx as usize].capital = U128::new(10_000);
+
+    let initial_pnl: i128 = kani::any();
+    kani::assume(initial_pnl > -50_000 && initial_pnl < 50_000);
+    engine.accounts[user_idx as usize].pnl = I128::new(initial_pnl);
+    engine.recompute_aggregates();
+
+    kani::assume(conservation_fast_no_funding(&engine));
+
+    let vault_before = engine.vault.get();
+    let c_tot_before = engine.c_tot.get();
+    let ins_before = engine.insurance_fund.balance.get();
+
+    let new_pnl: i128 = kani::any();
+    kani::assume(new_pnl > -50_000 && new_pnl < 50_000);
+
+    engine.set_pnl(user_idx as usize, new_pnl);
+
+    kani::assert(
+        conservation_fast_no_funding(&engine),
+        "conservation must hold after set_pnl",
+    );
+    kani::assert(engine.vault.get() == vault_before, "vault unchanged by set_pnl");
+    kani::assert(engine.c_tot.get() == c_tot_before, "c_tot unchanged by set_pnl");
+    kani::assert(
+        engine.insurance_fund.balance.get() == ins_before,
+        "insurance unchanged by set_pnl",
+    );
+}
+
+// ----------------------------------------------------------------------------
+// set_capital: Conservation
+// Modifies account.capital and c_tot. vault and insurance untouched.
+// Conservation holds iff caller ensures vault >= new_c_tot + insurance.
+// This is a low-level helper — callers are responsible for maintaining conservation.
+// We prove that set_capital correctly maintains the c_tot aggregate,
+// and that conservation is preserved when the new capital <= old capital
+// (the common case: fees, losses, liquidation).
+// ----------------------------------------------------------------------------
+
+/// set_capital: Conservation preserved when capital decreases (fee/loss path).
+/// When capital decreases, c_tot decreases, so vault - c_tot - insurance widens.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_set_capital_decrease_preserves_conservation() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+
+    let old_capital: u128 = kani::any();
+    kani::assume(old_capital > 0 && old_capital < 50_000);
+    engine.accounts[user_idx as usize].capital = U128::new(old_capital);
+    engine.recompute_aggregates();
+
+    kani::assume(conservation_fast_no_funding(&engine));
+
+    let new_capital: u128 = kani::any();
+    kani::assume(new_capital <= old_capital); // Decrease or unchanged
+
+    engine.set_capital(user_idx as usize, new_capital);
+
+    kani::assert(
+        conservation_fast_no_funding(&engine),
+        "conservation must hold when capital decreases",
+    );
+}
+
+/// set_capital: c_tot tracks capital delta correctly.
+/// Conservation may or may not hold when capital increases — that depends on the
+/// caller ensuring the vault has sufficient residual. We prove the aggregate is correct.
+#[kani::proof]
+#[kani::unwind(33)]
+#[kani::solver(cadical)]
+fn proof_set_capital_aggregate_correct() {
+    let mut engine = RiskEngine::new(test_params());
+    engine.vault = U128::new(100_000);
+
+    let user_idx = engine.add_user(0).unwrap();
+
+    let old_capital: u128 = kani::any();
+    kani::assume(old_capital < 50_000);
+    engine.accounts[user_idx as usize].capital = U128::new(old_capital);
+    engine.recompute_aggregates();
+
+    let c_tot_before = engine.c_tot.get();
+
+    let new_capital: u128 = kani::any();
+    kani::assume(new_capital < 50_000);
+
+    engine.set_capital(user_idx as usize, new_capital);
+
+    // c_tot must reflect the delta
+    if new_capital >= old_capital {
+        kani::assert(
+            engine.c_tot.get() == c_tot_before + (new_capital - old_capital),
+            "c_tot must increase by delta when capital increases",
+        );
+    } else {
+        kani::assert(
+            engine.c_tot.get() == c_tot_before - (old_capital - new_capital),
+            "c_tot must decrease by delta when capital decreases",
+        );
+    }
 }
