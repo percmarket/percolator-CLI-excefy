@@ -1,12 +1,12 @@
-# Percolator
+# Percolator Prediction Engine
 
-**EDUCATIONAL RESEARCH PROJECT — NOT PRODUCTION READY. NOT AUDITED. Do NOT use with real funds.**
+Percolator-based market infrastructure for Pump.fun tokens migrated to PumpSwap.
 
-A predictable alternative to ADL.
+This fork focuses on deterministic prediction market settlement with bounded payouts:
 
-If you want the `xy = k` of perpetual futures risk engines -- something you can reason about, audit, and run without human intervention -- the cleanest move is simple: stop treating profit like money. Treat it like what it really is in a stressed exchange: a junior claim on a shared balance sheet.
+> No market can pay out more value than currently available in the vault.
 
-> No user can ever withdraw more value than actually exists on the exchange balance sheet.
+Status: research-stage protocol development (not audited yet).
 
 ## The Core Idea
 
