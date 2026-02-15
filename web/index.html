@@ -1,0 +1,57 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PercMarket - PumpSwap Prediction Markets</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">PercMarket</div>
+      <div class="subtitle">Prediction markets for Pump.fun tokens migrated to PumpSwap</div>
+      <div class="status" id="feedStatus">Connecting...</div>
+    </header>
+
+    <main class="layout">
+      <section class="hero">
+        <h1>Migrated Tokens Only</h1>
+        <p>
+          Clean, deterministic markets. Every card below is built from tokens
+          with <code>migrated_to_pumpswap = true</code>.
+        </p>
+      </section>
+
+      <section class="stats" id="stats"></section>
+
+      <section class="market-grid" id="marketGrid"></section>
+    </main>
+
+    <template id="marketCardTpl">
+      <article class="market-card">
+        <div class="card-head">
+          <div>
+            <div class="token-symbol"></div>
+            <div class="token-name"></div>
+          </div>
+          <span class="chip">PumpSwap Migrated</span>
+        </div>
+        <h3 class="question"></h3>
+        <div class="meta-row">
+          <span class="close-at"></span>
+          <span class="volume"></span>
+        </div>
+        <div class="odds-row">
+          <button class="yes-btn" type="button"></button>
+          <button class="no-btn" type="button"></button>
+        </div>
+        <div class="pool-row">
+          <span class="yes-pool"></span>
+          <span class="no-pool"></span>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

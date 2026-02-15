@@ -1,0 +1,54 @@
+﻿[
+  {
+    "id": "mkt-bonkx-1m",
+    "token_symbol": "BONKX",
+    "token_name": "BonkX",
+    "mint": "6f8f4e8b...",
+    "migrated_to_pumpswap": true,
+    "question": "Will BONKX close above $1,000,000 market cap in 24h?",
+    "close_at": "2026-02-16T15:00:00Z",
+    "yes_pool": 142.4,
+    "no_pool": 96.7,
+    "volume_24h": 412300,
+    "market_cap": 874120
+  },
+  {
+    "id": "mkt-woof-3m",
+    "token_symbol": "WOOF",
+    "token_name": "Woof Coin",
+    "mint": "a23391c2...",
+    "migrated_to_pumpswap": true,
+    "question": "Will WOOF close above $3,000,000 market cap in 24h?",
+    "close_at": "2026-02-16T18:30:00Z",
+    "yes_pool": 89.2,
+    "no_pool": 161.5,
+    "volume_24h": 693500,
+    "market_cap": 2118320
+  },
+  {
+    "id": "mkt-froggo-500k",
+    "token_symbol": "FROGGO",
+    "token_name": "Froggo",
+    "mint": "bc30a61f...",
+    "migrated_to_pumpswap": true,
+    "question": "Will FROGGO close above $500,000 market cap in 24h?",
+    "close_at": "2026-02-16T20:00:00Z",
+    "yes_pool": 54.1,
+    "no_pool": 43.9,
+    "volume_24h": 219300,
+    "market_cap": 486200
+  },
+  {
+    "id": "mkt-notmigrated-ignore",
+    "token_symbol": "EARLY",
+    "token_name": "Early Token",
+    "mint": "n/a",
+    "migrated_to_pumpswap": false,
+    "question": "Should not render",
+    "close_at": "2026-02-16T20:00:00Z",
+    "yes_pool": 1,
+    "no_pool": 1,
+    "volume_24h": 1,
+    "market_cap": 1
+  }
+]
