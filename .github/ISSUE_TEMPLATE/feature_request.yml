@@ -1,0 +1,26 @@
+﻿name: Feature request
+about: Suggest an improvement to prediction market engine rules or oracle handling
+labels: enhancement
+
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What limitation are you solving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe behavior, constraints, and expected impact
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Safety and invariant impact
+      description: Explain how value conservation and payout bounds remain valid
