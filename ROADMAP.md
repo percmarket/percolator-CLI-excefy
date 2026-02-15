@@ -1,27 +1,37 @@
 ﻿# Roadmap
 
-## v0.1 - Spec-Complete Engine Foundation
+## v0.1 — Core Engine (in progress)
 
-- [ ] Prediction market domain model
-- [ ] Market lifecycle state machine
-- [ ] Deterministic settlement API
+- [x] Prediction market domain types (`Market`, `Pools`, `Settlement`, `TokenSnapshot`)
+- [x] Eligibility gate — only PumpSwap-migrated tokens
+- [x] Deterministic settlement with coverage ratio `h`
+- [x] Unit tests for invariants (eligibility, full coverage, stress, vault bound)
 - [ ] Oracle schema and freshness enforcement
-- [ ] Invariant-driven unit tests
+- [ ] Per-account payout breakdown (individual `h`-scaled profit)
+- [ ] Market lifecycle state machine (open → closed → resolved → settled)
 
-## v0.2 - Oracle Hardening
+## v0.2 — Oracle Hardening
 
-- [ ] Multi-source reconciliation
-- [ ] Dispute-mode flow
+- [ ] Multi-source reconciliation (primary + secondary indexer)
+- [ ] Dispute-mode flow with deterministic tie-break
 - [ ] Snapshot hashing and replay tool
+- [ ] Integration with Pump.fun / PumpSwap on-chain data
 
-## v0.3 - Formal Safety Expansion
+## v0.3 — Formal Verification
 
-- [ ] Proof harnesses for payout bounds
-- [ ] Proof harnesses for capital seniority
-- [ ] Regression suite for edge-case settlement
+- [ ] Kani proof harnesses for payout conservation
+- [ ] Kani proof harnesses for capital seniority under stress
+- [ ] Regression suite for edge-case settlement scenarios
+
+## v0.4 — Additional Market Rules
+
+- [ ] `PriceAtCloseAtLeast` — price target markets
+- [ ] `VolumeInWindowAtLeast` — volume threshold markets
+- [ ] `MigrationWithinWindow` — migration timing markets
+- [ ] Configurable market duration and close conditions
 
 ## Non-Goals (Current Phase)
 
-- Frontend website
-- Public trading UI
-- Social features
+- Frontend / UI
+- Wallet integration
+- Token issuance

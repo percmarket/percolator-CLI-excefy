@@ -1,99 +1,124 @@
 # Percolator Prediction Engine
 
-Percolator-based market infrastructure for Pump.fun tokens migrated to PumpSwap.
+Binary prediction markets for Pump.fun tokens that have migrated to PumpSwap.
 
-This fork focuses on deterministic prediction market settlement with bounded payouts:
+Fork of [aeyakovenko/percolator](https://github.com/aeyakovenko/percolator) — repurposed from perpetual futures risk accounting to deterministic prediction market settlement.
 
-> No market can pay out more value than currently available in the vault.
+> No market can ever pay out more value than exists in the vault.
 
-Status: research-stage protocol development (not audited yet).
+## How It Works
 
-## The Core Idea
+Users place capital into `YES` or `NO` pools on binary outcomes for PumpSwap-migrated tokens. At market close, an oracle snapshot determines the outcome. Winners receive their capital back (senior claim) plus a share of the losing side's capital (junior claim), bounded by the global coverage ratio `h`.
 
-- **Principal** (capital) is senior.
-- **Profits** are junior IOUs.
-- A single global ratio `h` determines how much of all profits are actually backed.
-- Profits convert into withdrawable capital only through a bounded warmup process.
-
-## Why This Is Different From ADL
-
-Most perp venues use a waterfall: liquidate, insurance absorbs loss, and if insufficient, ADL. ADL preserves solvency by forcibly reducing profitable positions. The withdrawal-window model instead applies a global pro-rata haircut on profit extraction.
-
-## One Vault. Two Claim Classes.
-
-### Senior Claim: Capital
-
-Capital is withdrawable. Withdrawals only return capital, never raw profit.
-
-### Junior Claim: Profit
-
-Profit is an IOU backed by system residual value. It is not immediately withdrawable. It must first mature into capital through time-gated warmup (spec section 5-6).
-
-## The Global Coverage Ratio `h`
+### Settlement Math
 
 ```
-Residual  = max(0, V - C_tot - I)
+Residual = max(0, vault_funds - winner_capital)
 
-              min(Residual, PNL_pos_tot)
-    h     =  --------------------------
-                    PNL_pos_tot
+                min(Residual, loser_capital)
+    h       =  ----------------------------
+                      loser_capital
+
+payout_i  = capital_i + floor(profit_i × h)
 ```
 
-If the system is fully backed, `h = 1`. If stressed, `h < 1`. Every profitable account is backed by the same fraction `h`.
+When `h = 1`, winners collect full profit. When `h < 1` (stress), profit is haircut proportionally. Capital is always returned first.
 
-`V` is the vault balance. `C_tot` is the sum of all capital. `I` is the insurance fund. `PNL_pos_tot` is the sum of all positive PnL across all accounts.
+### Why This Matters
 
-## Profit as Equity
+Traditional prediction markets can become insolvent under extreme winner concentration. This engine adapts Percolator's two-claim-class model to guarantee bounded payouts:
 
-```
-effective_pnl_i = floor(max(PNL_i, 0) * h)
-```
+- **Capital (senior)**: always returned to winners first
+- **Profit (junior)**: paid pro-rata via `h`, never exceeds available residual
+- **No insolvency**: mathematically impossible to over-pay
 
-All winners share the same haircut. No rankings. No queue. Just proportional equity math.
+## Token Eligibility
 
-## The Withdrawal Window
+Only tokens satisfying all of:
 
-Only capital can leave the system. Profits must mature into capital through warmup, and the amount converted is bounded by `h`:
+1. Launched on Pump.fun
+2. Successfully migrated to PumpSwap (`migrated_to_pumpswap = true`)
+3. Oracle data source reachable and fresh
 
-```
-payout = floor(warmable_amount * h_num / h_den)
-```
+Non-migrated tokens are rejected at market creation.
 
-If the system is stressed, `h` falls and less profit converts. If losses are realized or buffers improve, `h` rises. The mechanism self-heals mathematically.
+## Market Types
 
-## Concrete Example
+Currently implemented:
 
-**Fully solvent:** `Residual = 150`, `PNL_pos_tot = 120` => `h = 1` (fully backed)
+| Rule | Example |
+|------|---------|
+| `MarketCapAtCloseAtLeast` | "Will $TOKEN exceed $1M market cap by close?" |
 
-**Stressed:** `Residual = 50`, `PNL_pos_tot = 200` => `h = 0.25` (each dollar of profit is backed by 25 cents)
+Planned:
 
-## Side-by-Side
+- `PriceAtCloseAtLeast` — price target markets
+- `VolumeInWindowAtLeast` — volume threshold markets
+- `MigrationWithinWindow` — migration timing markets
 
-| | ADL | Withdrawal-Window |
-|---|---|---|
-| **Mechanism** | Forcibly closes profitable positions | Haircuts profit extraction |
-| **When triggered** | Insurance depleted | Continuously via `h` |
-| **User experience** | Position deleted without consent | Withdrawable amount reduced |
-| **Recovery** | Manual re-entry | Automatic as `h` recovers |
-
-## The Invariant
+## Architecture
 
 ```
-Withdrawable value <= Backed capital
+src/
+├── percolator.rs    # Core risk engine (from upstream)
+├── i128.rs          # BPF-safe 128-bit arithmetic
+└── prediction.rs    # Prediction market module
+    ├── types        # Market, Pools, Settlement, TokenSnapshot
+    ├── create_market()   # Eligibility-gated market creation
+    ├── resolve_outcome() # Deterministic oracle resolution
+    └── settle_market()   # Bounded payout with h-ratio
 ```
 
-Formally verified with 145 Kani proofs covering conservation, principal protection, isolation, and no-teleport properties.
-
-## Open Source
-
-Fork it, test it, send bug reports. Percolator is open research under Apache-2.0.
+## Development
 
 ```bash
+# Format
+cargo fmt --all -- --check
+
+# Lint
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Test (uses MAX_ACCOUNTS=64)
+cargo test --features test
+
+# Formal verification (requires Kani)
 cargo install --locked kani-verifier
 cargo kani setup
 cargo kani
 ```
 
+## Tests
+
+The prediction module includes invariant-driven tests:
+
+- **Eligibility gate**: non-migrated tokens are rejected
+- **Full coverage**: when vault is solvent, `h = 1` and winners get full profit
+- **Stressed settlement**: when vault is underfunded, `h < 1` and profit is haircut
+- **Vault bound**: total payout never exceeds available vault funds
+
+## Documentation
+
+- [`docs/spec.md`](docs/spec.md) — Market rules and settlement specification
+- [`docs/oracle.md`](docs/oracle.md) — Oracle data requirements and dispute handling
+- [`docs/risk.md`](docs/risk.md) — Risk model and safety invariants
+- [`ROADMAP.md`](ROADMAP.md) — Development phases
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines
+
+## Roadmap
+
+See [`ROADMAP.md`](ROADMAP.md) for full details.
+
+**v0.1** (current): Core prediction market primitives, settlement engine, oracle schema, unit tests
+
+**v0.2**: Multi-source oracle reconciliation, dispute flow, snapshot replay
+
+**v0.3**: Formal verification harnesses for payout bounds and capital seniority
+
 ## References
 
-- Tarun Chitra, *Autodeleveraging: Impossibilities and Optimization*, arXiv:2512.01112, 2025. https://arxiv.org/abs/2512.01112
+- [aeyakovenko/percolator](https://github.com/aeyakovenko/percolator) — upstream risk engine
+- Tarun Chitra, *Autodeleveraging: Impossibilities and Optimization*, arXiv:2512.01112, 2025
+
+## License
+
+Apache-2.0
