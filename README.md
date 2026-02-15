@@ -101,18 +101,7 @@ The prediction module includes invariant-driven tests:
 - [`docs/spec.md`](docs/spec.md) — Market rules and settlement specification
 - [`docs/oracle.md`](docs/oracle.md) — Oracle data requirements and dispute handling
 - [`docs/risk.md`](docs/risk.md) — Risk model and safety invariants
-- [`ROADMAP.md`](ROADMAP.md) — Development phases
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution guidelines
-
-## Roadmap
-
-See [`ROADMAP.md`](ROADMAP.md) for full details.
-
-**v0.1** (current): Core prediction market primitives, settlement engine, oracle schema, unit tests
-
-**v0.2**: Multi-source oracle reconciliation, dispute flow, snapshot replay
-
-**v0.3**: Formal verification harnesses for payout bounds and capital seniority
 
 ## References
 
